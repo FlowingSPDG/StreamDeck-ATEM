@@ -1,0 +1,98 @@
+{
+  "Actions": [
+    {
+      "Icon": "Images/icon",
+      "Name": "Key Action",
+      "States": [
+        {
+          "Image": "Images/pluginAction",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "SupportedInMultiActions": false,
+      "Tooltip": "Key Action for ATEM",
+      "UUID": "dev.flowingspdg.atem.keyaction",
+      "PropertyInspectorPath": "PropertyInspector/PluginActionPI.html"
+    },
+    {
+      "Icon": "Images/cut_icon",
+      "Name": "ATEM Cut",
+      "States": [
+        {
+          "Image": "Images/cut_action",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Perform Cut transition on ATEM",
+      "UUID": "dev.flowingspdg.atem.cutaction",
+      "PropertyInspectorPath": "PropertyInspector/CutActionPI.html"
+    },
+    {
+      "Icon": "Images/transition_icon",
+      "Name": "ATEM Auto Transition",
+      "States": [
+        {
+          "Image": "Images/transition_action",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Perform Auto Transition on ATEM",
+      "UUID": "dev.flowingspdg.atem.autotransition",
+      "PropertyInspectorPath": "PropertyInspector/AutoTransitionPI.html"
+    },
+    {
+      "Icon": "Images/icon",
+      "Name": "Dials Action",
+      "States": [
+        {
+          "Image": "Images/pluginAction",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "SupportedInMultiActions": false,
+      "Tooltip": "Dials Action for ATEM",
+      "UUID": "ATEM_StreamDeck.dialaction",
+      "PropertyInspectorPath": "PropertyInspector/PluginActionPI.html"
+    },
+    {
+      "Icon": "Images/icon",
+      "Name": "Key and Dials Action",
+      "States": [
+        {
+          "Image": "Images/pluginAction",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "SupportedInMultiActions": false,
+      "Tooltip": "Key and Dials Action for ATEM",
+      "UUID": "ATEM_StreamDeck.keydialaction",
+      "PropertyInspectorPath": "PropertyInspector/PluginActionPI.html"
+    }
+  ],
+  "Author": "Shugo Kawamura",
+  "Name": "ATEM-StreamDeck",
+  "Description": "Blackmagic Design ATEM Controller with Cut and Auto Transition support",
+  "Icon": "Images/pluginIcon",
+  "URL": "https://github.com/FlowingSPDG",
+  "Version": "1.1",
+  "CodePath": "ATEM_StreamDeck.exe",
+  "Category": "Custom",
+  "CategoryIcon": "Images/categoryIcon",
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.4"
+  }
+}
