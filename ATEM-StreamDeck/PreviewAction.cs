@@ -9,16 +9,18 @@ using BMDSwitcherAPI;
 
 namespace ATEM_StreamDeck
 {
-    [PluginActionId("dev.flowingspdg.atem.autotransition")]
-    public class AutoTransitionAction : KeypadBase
+    [PluginActionId("dev.flowingspdg.atem.preview")]
+    public class PreviewAction : KeypadBase
     {
         private class PluginSettings
         {
             public static PluginSettings CreateDefaultSettings()
             {
                 PluginSettings instance = new PluginSettings();
-                instance.ATEMIPAddress = "192.168.1.101";
-                instance.MixEffectBlock = 0;
+                instance.ATEMIPAddress = ATEMConstants.DEFAULT_ATEM_IP;
+                instance.MixEffectBlock = ATEMConstants.DEFAULT_MIX_EFFECT_BLOCK;
+                instance.InputId = 1;
+                instance.ShowTally = true;
                 return instance;
             }
 
@@ -27,6 +29,12 @@ namespace ATEM_StreamDeck
 
             [JsonProperty(PropertyName = "mixEffectBlock")]
             public int MixEffectBlock { get; set; }
+
+            [JsonProperty(PropertyName = "inputId")]
+            public long InputId { get; set; }
+
+            [JsonProperty(PropertyName = "showTally")]
+            public bool ShowTally { get; set; }
         }
 
         #region Private Members
@@ -34,15 +42,15 @@ namespace ATEM_StreamDeck
         private PluginSettings settings;
         private ATEMConnection connection;
         private bool isRetrying = false;
-        private bool isInTransition = false;
+        private bool isOnPreview = false;
 
         #endregion
 
-        public AutoTransitionAction(SDConnection connection, InitialPayload payload) : base(connection, payload)
+        public PreviewAction(SDConnection connection, InitialPayload payload) : base(connection, payload)
         {
             try
             {
-                Logger.Instance.LogMessage(TracingLevel.INFO, "AutoTransitionAction constructor called");
+                Logger.Instance.LogMessage(TracingLevel.INFO, "PreviewAction constructor called");
                 
                 if (payload.Settings == null || payload.Settings.Count == 0)
                 {
@@ -56,11 +64,11 @@ namespace ATEM_StreamDeck
                 
                 InitializeATEMConnection();
                 
-                Logger.Instance.LogMessage(TracingLevel.INFO, "AutoTransitionAction constructor completed");
+                Logger.Instance.LogMessage(TracingLevel.INFO, "PreviewAction constructor completed");
             }
             catch (Exception ex)
             {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in AutoTransitionAction constructor: {ex}");
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in PreviewAction constructor: {ex}");
                 this.settings = PluginSettings.CreateDefaultSettings();
             }
         }
@@ -76,7 +84,7 @@ namespace ATEM_StreamDeck
                 ATEMConnectionManager.Instance.StateChanged += OnATEMStateChanged;
                 
                 // Check initial state
-                CheckInitialTransitionState();
+                CheckInitialPreviewState();
             }
         }
 
@@ -85,13 +93,13 @@ namespace ATEM_StreamDeck
             if (isConnected)
             {
                 Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
-                CheckInitialTransitionState();
+                CheckInitialPreviewState();
             }
             else
             {
                 Logger.Instance.LogMessage(TracingLevel.WARN, $"ATEM connection lost for {settings.ATEMIPAddress}");
                 // Reset button state when disconnected
-                isInTransition = false;
+                isOnPreview = false;
                 UpdateButtonState();
             }
         }
@@ -104,15 +112,17 @@ namespace ATEM_StreamDeck
                 if (e.IPAddress != settings.ATEMIPAddress || e.MixEffectIndex != settings.MixEffectBlock)
                     return;
 
-                if (e.EventType == ATEMEventType.TransitionStateChanged)
+                if (e.EventType == ATEMEventType.PreviewInputChanged)
                 {
-                    bool newTransitionState = (bool)e.NewValue;
-                    if (isInTransition != newTransitionState)
+                    long newPreviewInput = (long)e.NewValue;
+                    bool newPreviewState = (newPreviewInput == settings.InputId);
+                    
+                    if (isOnPreview != newPreviewState)
                     {
-                        isInTransition = newTransitionState;
+                        isOnPreview = newPreviewState;
                         UpdateButtonState();
                         Logger.Instance.LogMessage(TracingLevel.INFO, 
-                            $"Auto Transition button - transition state changed: {(isInTransition ? "IN TRANSITION" : "IDLE")}");
+                            $"Preview button {settings.InputId} - preview state changed: {(isOnPreview ? "ON PREVIEW" : "OFF PREVIEW")}");
                     }
                 }
             }
@@ -122,7 +132,7 @@ namespace ATEM_StreamDeck
             }
         }
 
-        private void CheckInitialTransitionState()
+        private void CheckInitialPreviewState()
         {
             try
             {
@@ -132,15 +142,16 @@ namespace ATEM_StreamDeck
                 var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(settings.ATEMIPAddress);
                 var meState = switcherState.GetMixEffectState(settings.MixEffectBlock);
                 
-                if (isInTransition != meState.IsInTransition)
+                bool newPreviewState = (meState.PreviewInput == settings.InputId);
+                if (isOnPreview != newPreviewState)
                 {
-                    isInTransition = meState.IsInTransition;
+                    isOnPreview = newPreviewState;
                     UpdateButtonState();
                 }
             }
             catch (Exception ex)
             {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error checking initial transition state: {ex}");
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error checking initial preview state: {ex}");
             }
         }
 
@@ -148,17 +159,24 @@ namespace ATEM_StreamDeck
         {
             try
             {
-                if (isInTransition)
+                if (!settings.ShowTally)
                 {
-                    // Set button to red image when in transition
-                    Connection.SetImageAsync(ATEMConstants.RED_BUTTON_IMAGE);
-                    Logger.Instance.LogMessage(TracingLevel.INFO, "Button image set to RED (in transition)");
+                    // If tally is disabled, show default image
+                    Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
+                    return;
+                }
+
+                if (isOnPreview)
+                {
+                    // Set button to green image when on preview
+                    Connection.SetImageAsync(ATEMConstants.GREEN_BUTTON_IMAGE);
+                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Button image set to GREEN (input {settings.InputId} on preview)");
                 }
                 else
                 {
-                    // Set button to green image when not in transition
+                    // Set button to default image when not on preview
                     Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
-                    Logger.Instance.LogMessage(TracingLevel.INFO, "Button image set to GREEN (idle)");
+                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Button image set to DEFAULT (input {settings.InputId} not on preview)");
                 }
             }
             catch (Exception ex)
@@ -178,7 +196,7 @@ namespace ATEM_StreamDeck
                 {
                     connection.ConnectionStateChanged -= OnConnectionStateChanged;
                 }
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"AutoTransitionAction Dispose called");
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"PreviewAction Dispose called");
             }
             catch (Exception ex)
             {
@@ -190,8 +208,8 @@ namespace ATEM_StreamDeck
         {
             try
             {
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Auto Transition Action - Key Pressed");
-                PerformAutoTransition();
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"Preview Action - Key Pressed for input {settings.InputId}");
+                SetPreviewInput();
             }
             catch (Exception ex)
             {
@@ -201,7 +219,7 @@ namespace ATEM_StreamDeck
 
         public override void KeyReleased(KeyPayload payload) 
         {
-            // Auto transition action is performed on key press, no action needed on release
+            // Preview action is performed on key press, no action needed on release
         }
 
         public override void OnTick() 
@@ -230,6 +248,9 @@ namespace ATEM_StreamDeck
             {
                 string oldIP = settings.ATEMIPAddress;
                 int oldMixEffectBlock = settings.MixEffectBlock;
+                long oldInputId = settings.InputId;
+                bool oldShowTally = settings.ShowTally;
+
                 Tools.AutoPopulateSettings(settings, payload.Settings);
                 
                 // If IP address changed, reconnect
@@ -241,10 +262,15 @@ namespace ATEM_StreamDeck
                     }
                     InitializeATEMConnection();
                 }
-                // If Mix Effect Block changed, check initial state
-                else if (oldMixEffectBlock != settings.MixEffectBlock)
+                // If Mix Effect Block or Input ID changed, check initial state
+                else if (oldMixEffectBlock != settings.MixEffectBlock || oldInputId != settings.InputId)
                 {
-                    CheckInitialTransitionState();
+                    CheckInitialPreviewState();
+                }
+                // If tally setting changed, update button state
+                else if (oldShowTally != settings.ShowTally)
+                {
+                    UpdateButtonState();
                 }
                 
                 SaveSettings();
@@ -259,13 +285,13 @@ namespace ATEM_StreamDeck
 
         #region Private Methods
 
-        private async void PerformAutoTransition()
+        private async void SetPreviewInput()
         {
             try
             {
                 if (connection == null || !connection.IsConnected)
                 {
-                    Logger.Instance.LogMessage(TracingLevel.WARN, "ATEM not connected, cannot perform auto transition");
+                    Logger.Instance.LogMessage(TracingLevel.WARN, "ATEM not connected, cannot set preview input");
                     return;
                 }
 
@@ -283,13 +309,13 @@ namespace ATEM_StreamDeck
                     return;
                 }
 
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Performing auto transition with current transition settings");
-                mixEffectBlock.PerformAutoTransition();
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Auto transition completed successfully");
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"Setting preview input to {settings.InputId}");
+                mixEffectBlock.SetPreviewInput(settings.InputId);
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"Preview input set to {settings.InputId} successfully");
             }
             catch (Exception ex)
             {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error performing auto transition: {ex}");
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error setting preview input: {ex}");
             }
         }
 

@@ -44,6 +44,36 @@
       "Tooltip": "Set next transition style and rate on ATEM",
       "UUID": "dev.flowingspdg.atem.setnexttransition",
       "PropertyInspectorPath": "PropertyInspector/SetNextTransitionPI.html"
+    },
+    {
+      "Icon": "Images/preview_icon",
+      "Name": "ATEM Preview",
+      "States": [
+        {
+          "Image": "Images/preview_action",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Set Preview input on ATEM with tally support",
+      "UUID": "dev.flowingspdg.atem.preview",
+      "PropertyInspectorPath": "PropertyInspector/PreviewActionPI.html"
+    },
+    {
+      "Icon": "Images/program_icon",
+      "Name": "ATEM Program",
+      "States": [
+        {
+          "Image": "Images/program_action",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "SupportedInMultiActions": true,
+      "Tooltip": "Set Program input on ATEM with tally support",
+      "UUID": "dev.flowingspdg.atem.program",
+      "PropertyInspectorPath": "PropertyInspector/ProgramActionPI.html"
     }
   ],
   "Author": "Shugo Kawamura",

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,minimal-ui,viewport-fit=cover">
+    <meta name=apple-mobile-web-app-capable content=yes>
+    <meta name=apple-mobile-web-app-status-bar-style content=black>
+    <title>ATEM Preview Settings</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/barraider/streamdeck-easypi@latest/src/sdpi.css">
+    <script src="https://cdn.jsdelivr.net/gh/barraider/streamdeck-easypi@latest/src/sdtools.common.js"></script>
+    <script src="PreviewActionPI.js"></script>
+</head>
+<body>
+    <div class="sdpi-wrapper">
+        <div class="sdpi-item">
+            <div class="sdpi-item-label">ATEM IP Address:</div>
+            <input class="sdpi-item-value sdProperty" placeholder="192.168.1.101" value="" id="atemIPAddress" oninput="setSettings()">
+        </div>
+        <div class="sdpi-item">
+            <div class="sdpi-item-label">Mix Effect Block:</div>
+            <select class="sdpi-item-value sdProperty" id="mixEffectBlock" onchange="setSettings()">
+                <option value="0">ME 1</option>
+                <option value="1">ME 2</option>
+                <option value="2">ME 3</option>
+                <option value="3">ME 4</option>
+            </select>
+        </div>
+        <div class="sdpi-item">
+            <div class="sdpi-item-label">Input ID:</div>
+            <input class="sdpi-item-value sdProperty" type="number" min="1" max="20" placeholder="1" value="" id="inputId" oninput="setSettings()">
+        </div>
+        <div class="sdpi-item">
+            <div class="sdpi-item-label">Show Tally:</div>
+            <input class="sdpi-item-value sdProperty" type="checkbox" id="showTally" onchange="setSettings()">
+        </div>
+        <div class="sdpi-item">
+            <div class="sdpi-item-label empty"></div>
+            <div class="sdpi-item-value">
+                <p>Configure your ATEM Preview button. This action will set the specified input as the Preview source on the selected Mix Effect block.</p>
+                <p><strong>Tally Support:</strong> When enabled, the button will show GREEN when this input is on Preview.</p>
+                <p><strong>Common Input IDs:</strong></p>
+                <ul>
+                    <li>1-8: Camera inputs</li>
+                    <li>1000: Color Bars</li>
+                    <li>2001: Color 1</li>
+                    <li>2002: Color 2</li>
+                    <li>3010: Media Player 1</li>
+                    <li>3020: Media Player 2</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
