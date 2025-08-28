@@ -35,15 +35,19 @@ function requestSettings() {
 
 function loadSettings(settings) {
     console.log('Loading settings:', settings);
-    
+
     document.getElementById('atemIPAddress').value = settings.atemIPAddress || '192.168.1.101';
     document.getElementById('mixEffectBlock').value = settings.mixEffectBlock || 0;
+    document.getElementById('transitionStyle').value = settings.transitionStyle || 0;
+    document.getElementById('transitionDuration').value = settings.transitionDuration || 1.0;
 }
 
 function setSettings() {
     var payload = {};
     payload.atemIPAddress = document.getElementById('atemIPAddress').value;
     payload.mixEffectBlock = parseInt(document.getElementById('mixEffectBlock').value);
+    payload.transitionStyle = parseInt(document.getElementById('transitionStyle').value);
+    payload.transitionDuration = parseFloat(document.getElementById('transitionDuration').value);
 
     if (websocket && websocket.readyState === 1) {
         const json = {

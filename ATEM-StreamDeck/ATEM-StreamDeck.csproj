@@ -82,13 +82,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ATEMConnectionManager.cs" />
+    <Compile Include="ATEMConstants.cs" />
     <Compile Include="AutoTransitionAction.cs" />
     <Compile Include="CutAction.cs" />
-    <Compile Include="DialsAction.cs" />
-    <Compile Include="KeyAction.cs" />
-    <Compile Include="KeyAndDialsAction.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SetNextTransitionAction.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
@@ -127,16 +126,22 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="PropertyInspector\AutoTransitionPI.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="PropertyInspector\AutoTransitionPI.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="PropertyInspector\CutActionPI.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="PropertyInspector\CutActionPI.js">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="PropertyInspector\SetNextTransitionPI.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="PropertyInspector\SetNextTransitionPI.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup>

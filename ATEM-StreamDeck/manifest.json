@@ -1,21 +1,6 @@
 {
   "Actions": [
     {
-      "Icon": "Images/icon",
-      "Name": "Key Action",
-      "States": [
-        {
-          "Image": "Images/pluginAction",
-          "TitleAlignment": "middle",
-          "FontSize": "12"
-        }
-      ],
-      "SupportedInMultiActions": false,
-      "Tooltip": "Key Action for ATEM",
-      "UUID": "dev.flowingspdg.atem.keyaction",
-      "PropertyInspectorPath": "PropertyInspector/PluginActionPI.html"
-    },
-    {
       "Icon": "Images/cut_icon",
       "Name": "ATEM Cut",
       "States": [
@@ -41,47 +26,32 @@
         }
       ],
       "SupportedInMultiActions": true,
-      "Tooltip": "Perform Auto Transition on ATEM",
+      "Tooltip": "Perform Auto Transition on ATEM using current settings",
       "UUID": "dev.flowingspdg.atem.autotransition",
       "PropertyInspectorPath": "PropertyInspector/AutoTransitionPI.html"
     },
     {
-      "Icon": "Images/icon",
-      "Name": "Dials Action",
+      "Icon": "Images/settings_icon",
+      "Name": "ATEM Set Next Transition",
       "States": [
         {
-          "Image": "Images/pluginAction",
+          "Image": "Images/settings_action",
           "TitleAlignment": "middle",
           "FontSize": "12"
         }
       ],
-      "SupportedInMultiActions": false,
-      "Tooltip": "Dials Action for ATEM",
-      "UUID": "ATEM_StreamDeck.dialaction",
-      "PropertyInspectorPath": "PropertyInspector/PluginActionPI.html"
-    },
-    {
-      "Icon": "Images/icon",
-      "Name": "Key and Dials Action",
-      "States": [
-        {
-          "Image": "Images/pluginAction",
-          "TitleAlignment": "middle",
-          "FontSize": "12"
-        }
-      ],
-      "SupportedInMultiActions": false,
-      "Tooltip": "Key and Dials Action for ATEM",
-      "UUID": "ATEM_StreamDeck.keydialaction",
-      "PropertyInspectorPath": "PropertyInspector/PluginActionPI.html"
+      "SupportedInMultiActions": true,
+      "Tooltip": "Set next transition style and rate on ATEM",
+      "UUID": "dev.flowingspdg.atem.setnexttransition",
+      "PropertyInspectorPath": "PropertyInspector/SetNextTransitionPI.html"
     }
   ],
   "Author": "Shugo Kawamura",
   "Name": "ATEM-StreamDeck",
-  "Description": "Blackmagic Design ATEM Controller with Cut and Auto Transition support",
+  "Description": "Blackmagic Design ATEM Controller",
   "Icon": "Images/pluginIcon",
   "URL": "https://github.com/FlowingSPDG",
-  "Version": "1.1",
+  "Version": "1.2",
   "CodePath": "ATEM_StreamDeck.exe",
   "Category": "Custom",
   "CategoryIcon": "Images/categoryIcon",

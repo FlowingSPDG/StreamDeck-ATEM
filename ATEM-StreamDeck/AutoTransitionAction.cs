@@ -19,8 +19,6 @@ namespace ATEM_StreamDeck
                 PluginSettings instance = new PluginSettings();
                 instance.ATEMIPAddress = "192.168.1.101";
                 instance.MixEffectBlock = 0;
-                instance.TransitionStyle = 0; // Mix transition
-                instance.TransitionRate = 30; // frames
                 return instance;
             }
 
@@ -29,12 +27,6 @@ namespace ATEM_StreamDeck
 
             [JsonProperty(PropertyName = "mixEffectBlock")]
             public int MixEffectBlock { get; set; }
-
-            [JsonProperty(PropertyName = "transitionStyle")]
-            public int TransitionStyle { get; set; }
-
-            [JsonProperty(PropertyName = "transitionRate")]
-            public uint TransitionRate { get; set; }
         }
 
         #region Private Members
@@ -42,6 +34,13 @@ namespace ATEM_StreamDeck
         private PluginSettings settings;
         private ATEMConnection connection;
         private bool isRetrying = false;
+        private bool isInTransition = false;
+
+        // Base64 images for button states
+        private const string DEFAULT_IMAGE = "";
+        private const string RED_BUTTON_IMAGE = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QBoRXhpZgAATU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAAExAAIAAAARAAAATgAAAAAAAABgAAAAAQAAAGAAAAABcGFpbnQubmV0IDUuMC4xMgAA/9sAQwACAQEBAQECAQEBAgICAgIEAwICAgIFBAQDBAYFBgYGBQYGBgcJCAYHCQcGBggLCAkKCgoKCgYICwwLCgwJCgoK/9sAQwECAgICAgIFAwMFCgcGBwoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoK/8AAEQgASABIAwESAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8A+L6K/lM/38CigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooA//Z";
+        private const string GREEN_BUTTON_IMAGE = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QBoRXhpZgAATU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAAExAAIAAAARAAAATgAAAAAAAABgAAAAAQAAAGAAAAABcGFpbnQubmV0IDUuMC4xMgAA/9sAQwACAQEBAQECAQEBAgICAgIEAwICAgIFBAQDBAYFBgYGBQYGBgcJCAYHCQcGBggLCAkKCgoKCgYICwwLCgwJCgoK/9sAQwECAgICAgIFAwMFCgcGBwoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoK/8AAEQgASABIAwESAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8A9Yor/K8/xTCigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooAKKACigAooA//Z";
+
 
         #endregion
 
@@ -78,6 +77,12 @@ namespace ATEM_StreamDeck
             {
                 connection = ATEMConnectionManager.Instance.GetConnection(settings.ATEMIPAddress);
                 connection.ConnectionStateChanged += OnConnectionStateChanged;
+                
+                // Subscribe to global state changes
+                ATEMConnectionManager.Instance.StateChanged += OnATEMStateChanged;
+                
+                // Check initial state
+                CheckInitialTransitionState();
             }
         }
 
@@ -86,10 +91,85 @@ namespace ATEM_StreamDeck
             if (isConnected)
             {
                 Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
+                CheckInitialTransitionState();
             }
             else
             {
                 Logger.Instance.LogMessage(TracingLevel.WARN, $"ATEM connection lost for {settings.ATEMIPAddress}");
+                // Reset button state when disconnected
+                isInTransition = false;
+                UpdateButtonState();
+            }
+        }
+
+        private void OnATEMStateChanged(object sender, ATEMStateChangeEventArgs e)
+        {
+            try
+            {
+                // Only handle events for our specific switcher and Mix Effect block
+                if (e.IPAddress != settings.ATEMIPAddress || e.MixEffectIndex != settings.MixEffectBlock)
+                    return;
+
+                if (e.EventType == ATEMEventType.TransitionStateChanged)
+                {
+                    bool newTransitionState = (bool)e.NewValue;
+                    if (isInTransition != newTransitionState)
+                    {
+                        isInTransition = newTransitionState;
+                        UpdateButtonState();
+                        Logger.Instance.LogMessage(TracingLevel.INFO, 
+                            $"Auto Transition button - transition state changed: {(isInTransition ? "IN TRANSITION" : "IDLE")}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error handling ATEM state change: {ex}");
+            }
+        }
+
+        private void CheckInitialTransitionState()
+        {
+            try
+            {
+                if (connection == null || !connection.IsConnected)
+                    return;
+
+                var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(settings.ATEMIPAddress);
+                var meState = switcherState.GetMixEffectState(settings.MixEffectBlock);
+                
+                if (isInTransition != meState.IsInTransition)
+                {
+                    isInTransition = meState.IsInTransition;
+                    UpdateButtonState();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error checking initial transition state: {ex}");
+            }
+        }
+
+        private void UpdateButtonState()
+        {
+            try
+            {
+                if (isInTransition)
+                {
+                    // Set button to red image when in transition
+                    Connection.SetImageAsync(RED_BUTTON_IMAGE);
+                    Logger.Instance.LogMessage(TracingLevel.INFO, "Button image set to RED (in transition)");
+                }
+                else
+                {
+                    // Set button to green image when not in transition
+                    Connection.SetImageAsync(DEFAULT_IMAGE);
+                    Logger.Instance.LogMessage(TracingLevel.INFO, "Button image set to GREEN (idle)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error updating button state: {ex}");
             }
         }
 
@@ -97,6 +177,9 @@ namespace ATEM_StreamDeck
         {
             try
             {
+                // Unsubscribe from global state changes
+                ATEMConnectionManager.Instance.StateChanged -= OnATEMStateChanged;
+                
                 if (connection != null)
                 {
                     connection.ConnectionStateChanged -= OnConnectionStateChanged;
@@ -152,6 +235,7 @@ namespace ATEM_StreamDeck
             try
             {
                 string oldIP = settings.ATEMIPAddress;
+                int oldMixEffectBlock = settings.MixEffectBlock;
                 Tools.AutoPopulateSettings(settings, payload.Settings);
                 
                 // If IP address changed, reconnect
@@ -162,6 +246,11 @@ namespace ATEM_StreamDeck
                         connection.ConnectionStateChanged -= OnConnectionStateChanged;
                     }
                     InitializeATEMConnection();
+                }
+                // If Mix Effect Block changed, check initial state
+                else if (oldMixEffectBlock != settings.MixEffectBlock)
+                {
+                    CheckInitialTransitionState();
                 }
                 
                 SaveSettings();
@@ -175,22 +264,6 @@ namespace ATEM_StreamDeck
         public override void ReceivedGlobalSettings(ReceivedGlobalSettingsPayload payload) { }
 
         #region Private Methods
-
-        private _BMDSwitcherTransitionStyle GetTransitionStyleFromIndex(int index)
-        {
-            // Map UI index to actual ATEM SDK enum values
-            switch (index)
-            {
-                case 0: return _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleMix;
-                case 1: return _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDip;
-                case 2: return _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleWipe;
-                case 3: return _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDVE;
-                case 4: return _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleStinger;
-                default:
-                    Logger.Instance.LogMessage(TracingLevel.WARN, $"Invalid transition style index {index}, defaulting to Mix");
-                    return _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleMix;
-            }
-        }
 
         private async void PerformAutoTransition()
         {
@@ -216,71 +289,7 @@ namespace ATEM_StreamDeck
                     return;
                 }
 
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"Setting transition style to index {settings.TransitionStyle}");
-                
-                // Get the correct transition style enum value
-                var transitionStyle = GetTransitionStyleFromIndex(settings.TransitionStyle);
-                
-                // Setup transition parameters
-                var transitionParams = mixEffectBlock as IBMDSwitcherTransitionParameters;
-                if (transitionParams != null)
-                {
-                    try
-                    {
-                        transitionParams.SetNextTransitionStyle(transitionStyle);
-                        transitionParams.SetNextTransitionSelection(_BMDSwitcherTransitionSelection.bmdSwitcherTransitionSelectionBackground);
-                        
-                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Successfully set transition style to {transitionStyle}");
-                        
-                        // Set transition rate based on style
-                        switch (transitionStyle)
-                        {
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleMix:
-                                var mixParams = mixEffectBlock as IBMDSwitcherTransitionMixParameters;
-                                if (mixParams != null)
-                                {
-                                    mixParams.SetRate(settings.TransitionRate);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set mix transition rate to {settings.TransitionRate}");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleWipe:
-                                var wipeParams = mixEffectBlock as IBMDSwitcherTransitionWipeParameters;
-                                if (wipeParams != null)
-                                {
-                                    wipeParams.SetRate(settings.TransitionRate);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set wipe transition rate to {settings.TransitionRate}");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDip:
-                                var dipParams = mixEffectBlock as IBMDSwitcherTransitionDipParameters;
-                                if (dipParams != null)
-                                {
-                                    dipParams.SetRate(settings.TransitionRate);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set dip transition rate to {settings.TransitionRate}");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDVE:
-                                var dveParams = mixEffectBlock as IBMDSwitcherTransitionDVEParameters;
-                                if (dveParams != null)
-                                {
-                                    dveParams.SetRate(settings.TransitionRate);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set DVE transition rate to {settings.TransitionRate}");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleStinger:
-                                // Stinger transitions typically don't have configurable rates
-                                Logger.Instance.LogMessage(TracingLevel.INFO, "Stinger transition selected (rate not configurable)");
-                                break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error setting transition parameters: {ex}");
-                        return;
-                    }
-                }
-
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Performing auto transition");
+                Logger.Instance.LogMessage(TracingLevel.INFO, "Performing auto transition with current transition settings");
                 mixEffectBlock.PerformAutoTransition();
                 Logger.Instance.LogMessage(TracingLevel.INFO, "Auto transition completed successfully");
             }

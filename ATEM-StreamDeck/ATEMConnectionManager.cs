@@ -18,6 +18,15 @@ namespace ATEM_StreamDeck
         private readonly ConcurrentDictionary<string, ATEMConnection> _connections = new ConcurrentDictionary<string, ATEMConnection>();
         private readonly Timer _connectionMonitorTimer;
 
+        // Framerate caching
+        private readonly ConcurrentDictionary<string, double> _switcherFramerates = new ConcurrentDictionary<string, double>();
+
+        // Global state tracking
+        private readonly ConcurrentDictionary<string, ATEMSwitcherState> _switcherStates = new ConcurrentDictionary<string, ATEMSwitcherState>();
+
+        // Events for global state changes
+        public event EventHandler<ATEMStateChangeEventArgs> StateChanged;
+
         private ATEMConnectionManager()
         {
             // Monitor connections every 5 seconds
@@ -34,7 +43,35 @@ namespace ATEM_StreamDeck
             if (_connections.TryRemove(ipAddress, out var connection))
             {
                 connection.Dispose();
+                _switcherFramerates.TryRemove(ipAddress, out _);
+                _switcherStates.TryRemove(ipAddress, out _);
             }
+        }
+
+        public double GetSwitcherFramerate(string ipAddress)
+        {
+            // Return cached framerate or default if not available
+            if (_switcherFramerates.TryGetValue(ipAddress, out double framerate))
+            {
+                return framerate;
+            }
+            return ATEMConstants.DEFAULT_FRAMERATE;
+        }
+
+        internal void SetSwitcherFramerate(string ipAddress, double framerate)
+        {
+            _switcherFramerates[ipAddress] = framerate;
+            Logger.Instance.LogMessage(TracingLevel.INFO, $"Cached framerate for {ipAddress}: {framerate} fps");
+        }
+
+        public ATEMSwitcherState GetSwitcherState(string ipAddress)
+        {
+            return _switcherStates.GetOrAdd(ipAddress, ip => new ATEMSwitcherState(ip));
+        }
+
+        internal void OnStateChanged(string ipAddress, ATEMStateChangeEventArgs args)
+        {
+            StateChanged?.Invoke(this, args);
         }
 
         private void MonitorConnections(object state)
@@ -70,6 +107,189 @@ namespace ATEM_StreamDeck
                 connection.Dispose();
             }
             _connections.Clear();
+            _switcherFramerates.Clear();
+            _switcherStates.Clear();
+        }
+    }
+
+    // State change event arguments
+    public class ATEMStateChangeEventArgs : EventArgs
+    {
+        public string IPAddress { get; }
+        public int MixEffectIndex { get; }
+        public ATEMEventType EventType { get; set; }
+        public object OldValue { get; set; }
+        public object NewValue { get; set; }
+
+        public ATEMStateChangeEventArgs(string ipAddress, int mixEffectIndex)
+        {
+            IPAddress = ipAddress;
+            MixEffectIndex = mixEffectIndex;
+        }
+    }
+
+    // Event types for ATEM state changes
+    public enum ATEMEventType
+    {
+        TransitionStateChanged,
+        TransitionPositionChanged,
+        ProgramInputChanged,
+        PreviewInputChanged
+    }
+
+    // Mix Effect state container
+    public class ATEMMixEffectState
+    {
+        public int Index { get; }
+        public bool IsInTransition { get; private set; }
+        public double TransitionPosition { get; private set; }
+        public long ProgramInput { get; private set; }
+        public long PreviewInput { get; private set; }
+
+        public ATEMMixEffectState(int index)
+        {
+            Index = index;
+            IsInTransition = false;
+            TransitionPosition = 0.0;
+            ProgramInput = 0;
+            PreviewInput = 0;
+        }
+
+        public void UpdateTransitionState(bool inTransition, double position)
+        {
+            IsInTransition = inTransition;
+            TransitionPosition = position;
+        }
+
+        public void UpdateInputs(long program, long preview)
+        {
+            ProgramInput = program;
+            PreviewInput = preview;
+        }
+    }
+
+    // Global state container for a switcher
+    public class ATEMSwitcherState
+    {
+        public string IPAddress { get; }
+        public ConcurrentDictionary<int, ATEMMixEffectState> MixEffectStates { get; }
+
+        public ATEMSwitcherState(string ipAddress)
+        {
+            IPAddress = ipAddress;
+            MixEffectStates = new ConcurrentDictionary<int, ATEMMixEffectState>();
+        }
+
+        public ATEMMixEffectState GetMixEffectState(int meIndex)
+        {
+            return MixEffectStates.GetOrAdd(meIndex, index => new ATEMMixEffectState(index));
+        }
+    }
+
+    // ATEM Mix Effect callback implementation
+    public class ATEMMixEffectCallback : IBMDSwitcherMixEffectBlockCallback
+    {
+        private readonly string _ipAddress;
+        private readonly int _mixEffectIndex;
+        private readonly ATEMSwitcherState _switcherState;
+        private readonly IBMDSwitcherMixEffectBlock _mixEffectBlock;
+
+        public ATEMMixEffectCallback(string ipAddress, int mixEffectIndex, ATEMSwitcherState switcherState, IBMDSwitcherMixEffectBlock mixEffectBlock)
+        {
+            _ipAddress = ipAddress;
+            _mixEffectIndex = mixEffectIndex;
+            _switcherState = switcherState;
+            _mixEffectBlock = mixEffectBlock;
+        }
+
+        public void Notify(_BMDSwitcherMixEffectBlockEventType eventType)
+        {
+            try
+            {
+                var meState = _switcherState?.GetMixEffectState(_mixEffectIndex);
+                var eventArgs = new ATEMStateChangeEventArgs(_ipAddress, _mixEffectIndex);
+
+                switch (eventType)
+                {
+                    case _BMDSwitcherMixEffectBlockEventType.bmdSwitcherMixEffectBlockEventTypeInTransitionChanged:
+                        if (_mixEffectBlock != null && meState != null)
+                        {
+                            _mixEffectBlock.GetInTransition(out int inTransition);
+                            bool wasInTransition = meState.IsInTransition;
+                            bool isInTransition = inTransition != 0;
+                            
+                            meState.UpdateTransitionState(isInTransition, meState.TransitionPosition);
+                            
+                            eventArgs.EventType = ATEMEventType.TransitionStateChanged;
+                            eventArgs.OldValue = wasInTransition;
+                            eventArgs.NewValue = isInTransition;
+                            
+                            Logger.Instance.LogMessage(TracingLevel.INFO, 
+                                $"ME {_mixEffectIndex} transition state changed: {(isInTransition ? "IN TRANSITION" : "IDLE")}");
+                        }
+                        break;
+
+                    case _BMDSwitcherMixEffectBlockEventType.bmdSwitcherMixEffectBlockEventTypeTransitionPositionChanged:
+                        if (_mixEffectBlock != null && meState != null)
+                        {
+                            _mixEffectBlock.GetTransitionPosition(out double position);
+                            double oldPosition = meState.TransitionPosition;
+                            
+                            meState.UpdateTransitionState(meState.IsInTransition, position);
+                            
+                            eventArgs.EventType = ATEMEventType.TransitionPositionChanged;
+                            eventArgs.OldValue = oldPosition;
+                            eventArgs.NewValue = position;
+                        }
+                        break;
+
+                    case _BMDSwitcherMixEffectBlockEventType.bmdSwitcherMixEffectBlockEventTypeProgramInputChanged:
+                        if (_mixEffectBlock != null && meState != null)
+                        {
+                            _mixEffectBlock.GetProgramInput(out long programInput);
+                            long oldProgram = meState.ProgramInput;
+                            
+                            meState.UpdateInputs(programInput, meState.PreviewInput);
+                            
+                            eventArgs.EventType = ATEMEventType.ProgramInputChanged;
+                            eventArgs.OldValue = oldProgram;
+                            eventArgs.NewValue = programInput;
+                            
+                            Logger.Instance.LogMessage(TracingLevel.INFO, $"ME {_mixEffectIndex} program input changed: {oldProgram} -> {programInput}");
+                        }
+                        break;
+
+                    case _BMDSwitcherMixEffectBlockEventType.bmdSwitcherMixEffectBlockEventTypePreviewInputChanged:
+                        if (_mixEffectBlock != null && meState != null)
+                        {
+                            _mixEffectBlock.GetPreviewInput(out long previewInput);
+                            long oldPreview = meState.PreviewInput;
+                            
+                            meState.UpdateInputs(meState.ProgramInput, previewInput);
+                            
+                            eventArgs.EventType = ATEMEventType.PreviewInputChanged;
+                            eventArgs.OldValue = oldPreview;
+                            eventArgs.NewValue = previewInput;
+                            
+                            Logger.Instance.LogMessage(TracingLevel.INFO, $"ME {_mixEffectIndex} preview input changed: {oldPreview} -> {previewInput}");
+                        }
+                        break;
+
+                    default:
+                        // Don't process unknown event types
+                        return;
+                }
+
+                // Notify global state change (only if we have connection manager context)
+                if (!string.IsNullOrEmpty(_ipAddress))
+                {
+                    ATEMConnectionManager.Instance.OnStateChanged(_ipAddress, eventArgs);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in MixEffect callback for ME {_mixEffectIndex}: {ex}");
+            }
         }
     }
 
@@ -83,6 +303,10 @@ namespace ATEM_StreamDeck
         private DateTime _lastActivity;
         private int _retryCount;
         private const int MaxRetries = 3;
+
+        // Callback management
+        private readonly List<(ATEMMixEffectCallback callback, IBMDSwitcherMixEffectBlock meBlock)> _mixEffectCallbacks = 
+            new List<(ATEMMixEffectCallback callback, IBMDSwitcherMixEffectBlock meBlock)>();
 
         // Events for status updates
         public event EventHandler<ATEMStatusEventArgs> StatusChanged;
@@ -124,6 +348,9 @@ namespace ATEM_StreamDeck
                         
                         Logger.Instance.LogMessage(TracingLevel.INFO, $"Successfully connected to ATEM at {_ipAddress}");
                         
+                        // Cache framerate for this switcher
+                        CacheFramerate();
+                        
                         // Setup event handlers for status monitoring
                         SetupStatusMonitoring();
                         
@@ -148,6 +375,61 @@ namespace ATEM_StreamDeck
             }
         }
 
+        private void CacheFramerate()
+        {
+            try
+            {
+                if (_switcher != null)
+                {
+                    _switcher.GetVideoMode(out _BMDSwitcherVideoMode videoMode);
+                    double framerate = GetFramerateFromVideoMode(videoMode);
+                    ATEMConnectionManager.Instance.SetSwitcherFramerate(_ipAddress, framerate);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error caching framerate: {ex}");
+                // Use default framerate
+                ATEMConnectionManager.Instance.SetSwitcherFramerate(_ipAddress, ATEMConstants.DEFAULT_FRAMERATE);
+            }
+        }
+
+        private double GetFramerateFromVideoMode(_BMDSwitcherVideoMode videoMode)
+        {
+            switch (videoMode)
+            {
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode525i5994NTSC:
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode625i50PAL:
+                    return 25.0;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode720p50:
+                    return 50.0;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode720p5994:
+                    return 59.94;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080i50:
+                    return 25.0;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080i5994:
+                    return 29.97;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p2398:
+                    return 23.98;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p24:
+                    return 24.0;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p25:
+                    return 25.0;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p2997:
+                    return 29.97;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p30:
+                    return 30.0;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p50:
+                    return 50.0;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p5994:
+                    return 59.94;
+                case _BMDSwitcherVideoMode.bmdSwitcherVideoMode1080p60:
+                    return 60.0;
+                default:
+                    return ATEMConstants.DEFAULT_FRAMERATE;
+            }
+        }
+
         public async Task<bool> TryReconnect()
         {
             if (_retryCount >= MaxRetries)
@@ -167,8 +449,88 @@ namespace ATEM_StreamDeck
 
         private void SetupStatusMonitoring()
         {
-            // Note: In a real implementation, you would set up callbacks for BMD switcher events
-            // This is a simplified version - BMD SDK has specific callback interfaces
+            try
+            {
+                var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(_ipAddress);
+                
+                // Get mix effect blocks and setup callbacks
+                IntPtr meIteratorPtr;
+                _switcher.CreateIterator(typeof(IBMDSwitcherMixEffectBlockIterator).GUID, out meIteratorPtr);
+                IBMDSwitcherMixEffectBlockIterator meIterator = Marshal.GetObjectForIUnknown(meIteratorPtr) as IBMDSwitcherMixEffectBlockIterator;
+                if (meIterator != null)
+                {
+                    int meIndex = 0;
+                    while (true)
+                    {
+                        meIterator.Next(out IBMDSwitcherMixEffectBlock meBlock);
+                        if (meBlock == null) break;
+
+                        // Initialize state for this ME block
+                        InitializeMixEffectState(meBlock, meIndex, switcherState);
+
+                        // Create and add ME callback
+                        var meCallback = new ATEMMixEffectCallback(_ipAddress, meIndex, switcherState, meBlock);
+                        meBlock.AddCallback(meCallback);
+                        _mixEffectCallbacks.Add((meCallback, meBlock));
+
+                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Setup monitoring for ME {meIndex}");
+                        meIndex++;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error setting up status monitoring: {ex}");
+            }
+        }
+
+        private void InitializeMixEffectState(IBMDSwitcherMixEffectBlock meBlock, int meIndex, ATEMSwitcherState switcherState)
+        {
+            try
+            {
+                var meState = switcherState.GetMixEffectState(meIndex);
+
+                // Get initial state
+                meBlock.GetInTransition(out int inTransition);
+                meBlock.GetTransitionPosition(out double position);
+                meBlock.GetProgramInput(out long programInput);
+                meBlock.GetPreviewInput(out long previewInput);
+
+                // Update state
+                meState.UpdateTransitionState(inTransition != 0, position);
+                meState.UpdateInputs(programInput, previewInput);
+
+                Logger.Instance.LogMessage(TracingLevel.INFO, 
+                    $"Initialized ME {meIndex}: Program={programInput}, Preview={previewInput}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error initializing ME {meIndex} state: {ex}");
+            }
+        }
+
+        private void CleanupCallbacks()
+        {
+            try
+            {
+                // Cleanup ME callbacks
+                foreach (var (callback, meBlock) in _mixEffectCallbacks)
+                {
+                    try
+                    {
+                        meBlock?.RemoveCallback(callback);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Instance.LogMessage(TracingLevel.WARN, $"Error removing ME callback: {ex}");
+                    }
+                }
+                _mixEffectCallbacks.Clear();
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error cleaning up callbacks: {ex}");
+            }
         }
 
         public ATEMSwitcherWrapper GetSwitcherWrapper()
@@ -183,6 +545,8 @@ namespace ATEM_StreamDeck
             {
                 try
                 {
+                    CleanupCallbacks();
+                    
                     if (_switcher != null)
                     {
                         Marshal.ReleaseComObject(_switcher);
