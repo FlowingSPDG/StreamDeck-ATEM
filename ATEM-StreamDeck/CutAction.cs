@@ -196,24 +196,44 @@ namespace ATEM_StreamDeck
                     return;
                 }
 
-                // Get the mix effect block
-                IBMDSwitcherMixEffectBlock mixEffectBlock = null;
-                for (int i = 0; i <= settings.MixEffectBlock; i++)
+                try
                 {
-                    meIterator.Next(out mixEffectBlock);
-                    if (mixEffectBlock == null)
+                    // Get the mix effect block
+                    IBMDSwitcherMixEffectBlock mixEffectBlock = null;
+                    for (int i = 0; i <= settings.MixEffectBlock; i++)
                     {
-                        Logger.Instance.LogMessage(TracingLevel.ERROR, $"Mix Effect Block {settings.MixEffectBlock} not found");
-                        return;
+                        meIterator.Next(out mixEffectBlock);
+                        if (mixEffectBlock == null)
+                        {
+                            Logger.Instance.LogMessage(TracingLevel.ERROR, $"Mix Effect Block {settings.MixEffectBlock} not found");
+                            return;
+                        }
+                        if (i < settings.MixEffectBlock)
+                        {
+                            // Release intermediate blocks we don't need
+                            Marshal.ReleaseComObject(mixEffectBlock);
+                        }
                     }
-                    if (i < settings.MixEffectBlock)
+
+                    if (mixEffectBlock != null)
                     {
-                        Marshal.ReleaseComObject(mixEffectBlock);
+                        try
+                        {
+                            Logger.Instance.LogMessage(TracingLevel.INFO, "Performing cut transition");
+                            mixEffectBlock.PerformCut();
+                        }
+                        finally
+                        {
+                            // Release the mix effect block
+                            Marshal.ReleaseComObject(mixEffectBlock);
+                        }
                     }
                 }
-
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Performing cut transition");
-                mixEffectBlock.PerformCut();
+                finally
+                {
+                    // Always release the iterator
+                    Marshal.ReleaseComObject(meIterator);
+                }
             }
             catch (Exception ex)
             {

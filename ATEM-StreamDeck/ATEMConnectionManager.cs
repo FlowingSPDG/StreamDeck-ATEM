@@ -464,14 +464,25 @@ namespace ATEM_StreamDeck
                 IBMDSwitcherMixEffectBlockIterator meIterator = Marshal.GetObjectForIUnknown(meIteratorPtr) as IBMDSwitcherMixEffectBlockIterator;
                 if (meIterator != null)
                 {
-                    int meCount = 0;
-                    while (true)
+                    try
                     {
-                        meIterator.Next(out IBMDSwitcherMixEffectBlock meBlock);
-                        if (meBlock == null) break;
-                        meCount++;
+                        int meCount = 0;
+                        while (true)
+                        {
+                            meIterator.Next(out IBMDSwitcherMixEffectBlock meBlock);
+                            if (meBlock == null) break;
+                            
+                            meCount++;
+                            // Release each mix effect block after counting
+                            Marshal.ReleaseComObject(meBlock);
+                        }
+                        switcherInfo.MixEffectCount = Math.Max(1, meCount);
                     }
-                    switcherInfo.MixEffectCount = Math.Max(1, meCount);
+                    finally
+                    {
+                        // Always release the iterator
+                        Marshal.ReleaseComObject(meIterator);
+                    }
                 }
 
                 // Get Input information
@@ -480,33 +491,46 @@ namespace ATEM_StreamDeck
                 IBMDSwitcherInputIterator inputIterator = Marshal.GetObjectForIUnknown(inputIteratorPtr) as IBMDSwitcherInputIterator;
                 if (inputIterator != null)
                 {
-                    var inputs = new List<ATEMInputInfo>();
-                    while (true)
+                    try
                     {
-                        inputIterator.Next(out IBMDSwitcherInput input);
-                        if (input == null) break;
-
-                        try
+                        var inputs = new List<ATEMInputInfo>();
+                        while (true)
                         {
-                            input.GetInputId(out long inputId);
-                            input.GetShortName(out string shortName);
-                            input.GetLongName(out string longName);
-                            
-                            inputs.Add(new ATEMInputInfo
+                            inputIterator.Next(out IBMDSwitcherInput input);
+                            if (input == null) break;
+
+                            try
                             {
-                                InputId = inputId,
-                                ShortName = shortName ?? "",
-                                LongName = longName ?? ""
-                            });
+                                input.GetInputId(out long inputId);
+                                input.GetShortName(out string shortName);
+                                input.GetLongName(out string longName);
+                                
+                                inputs.Add(new ATEMInputInfo
+                                {
+                                    InputId = inputId,
+                                    ShortName = shortName ?? "",
+                                    LongName = longName ?? ""
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Instance.LogMessage(TracingLevel.WARN, $"Error reading input info: {ex.Message}");
+                            }
+                            finally
+                            {
+                                // Release each input object after reading
+                                Marshal.ReleaseComObject(input);
+                            }
                         }
-                        catch (Exception ex)
-                        {
-                            Logger.Instance.LogMessage(TracingLevel.WARN, $"Error reading input info: {ex.Message}");
-                        }
-                    }
 
-                    switcherInfo.Inputs = inputs.OrderBy(i => i.InputId).ToList();
-                    switcherInfo.InputCount = inputs.Count;
+                        switcherInfo.Inputs = inputs.OrderBy(i => i.InputId).ToList();
+                        switcherInfo.InputCount = inputs.Count;
+                    }
+                    finally
+                    {
+                        // Always release the iterator
+                        Marshal.ReleaseComObject(inputIterator);
+                    }
                 }
 
                 switcherInfo.LastUpdated = DateTime.Now;
@@ -583,22 +607,30 @@ namespace ATEM_StreamDeck
                 IBMDSwitcherMixEffectBlockIterator meIterator = Marshal.GetObjectForIUnknown(meIteratorPtr) as IBMDSwitcherMixEffectBlockIterator;
                 if (meIterator != null)
                 {
-                    int meIndex = 0;
-                    while (true)
+                    try
                     {
-                        meIterator.Next(out IBMDSwitcherMixEffectBlock meBlock);
-                        if (meBlock == null) break;
+                        int meIndex = 0;
+                        while (true)
+                        {
+                            meIterator.Next(out IBMDSwitcherMixEffectBlock meBlock);
+                            if (meBlock == null) break;
 
-                        // Initialize state for this ME block
-                        InitializeMixEffectState(meBlock, meIndex, switcherState);
+                            // Initialize state for this ME block
+                            InitializeMixEffectState(meBlock, meIndex, switcherState);
 
-                        // Create and add ME callback
-                        var meCallback = new ATEMMixEffectCallback(_ipAddress, meIndex, switcherState, meBlock);
-                        meBlock.AddCallback(meCallback);
-                        _mixEffectCallbacks.Add((meCallback, meBlock));
+                            // Create and add ME callback
+                            var meCallback = new ATEMMixEffectCallback(_ipAddress, meIndex, switcherState, meBlock);
+                            meBlock.AddCallback(meCallback);
+                            _mixEffectCallbacks.Add((meCallback, meBlock));
 
-                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Setup monitoring for ME {meIndex}");
-                        meIndex++;
+                            Logger.Instance.LogMessage(TracingLevel.INFO, $"Setup monitoring for ME {meIndex}");
+                            meIndex++;
+                        }
+                    }
+                    finally
+                    {
+                        // Release the iterator
+                        Marshal.ReleaseComObject(meIterator);
                     }
                 }
             }
@@ -643,6 +675,11 @@ namespace ATEM_StreamDeck
                     try
                     {
                         meBlock?.RemoveCallback(callback);
+                        // Release the mix effect block COM object
+                        if (meBlock != null)
+                        {
+                            Marshal.ReleaseComObject(meBlock);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -732,15 +769,23 @@ namespace ATEM_StreamDeck
                 if (meIterator == null)
                     yield break;
 
-                while (true)
+                try
                 {
-                    IBMDSwitcherMixEffectBlock me;
-                    meIterator.Next(out me);
+                    while (true)
+                    {
+                        IBMDSwitcherMixEffectBlock me;
+                        meIterator.Next(out me);
 
-                    if (me != null)
-                        yield return me;
-                    else
-                        yield break;
+                        if (me != null)
+                            yield return me;
+                        else
+                            yield break;
+                    }
+                }
+                finally
+                {
+                    // Always release the iterator
+                    Marshal.ReleaseComObject(meIterator);
                 }
             }
         }
@@ -755,15 +800,23 @@ namespace ATEM_StreamDeck
                 if (inputIterator == null)
                     yield break;
 
-                while (true)
+                try
                 {
-                    IBMDSwitcherInput input;
-                    inputIterator.Next(out input);
+                    while (true)
+                    {
+                        IBMDSwitcherInput input;
+                        inputIterator.Next(out input);
 
-                    if (input != null)
-                        yield return input;
-                    else
-                        yield break;
+                        if (input != null)
+                            yield return input;
+                        else
+                            yield break;
+                    }
+                }
+                finally
+                {
+                    // Always release the iterator
+                    Marshal.ReleaseComObject(inputIterator);
                 }
             }
         }

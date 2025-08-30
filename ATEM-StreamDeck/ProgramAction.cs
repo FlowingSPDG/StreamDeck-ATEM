@@ -409,7 +409,7 @@ namespace ATEM_StreamDeck
 
         #region Private Methods
 
-        private async void SetProgramInput()
+        private void SetProgramInput()
         {
             try
             {
@@ -433,9 +433,17 @@ namespace ATEM_StreamDeck
                     return;
                 }
 
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"Setting program input to {settings.InputId}");
-                mixEffectBlock.SetProgramInput(settings.InputId);
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"Program input set to {settings.InputId} successfully");
+                try
+                {
+                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Setting program input to {settings.InputId}");
+                    mixEffectBlock.SetProgramInput(settings.InputId);
+                    Logger.Instance.LogMessage(TracingLevel.INFO, "Program input set successfully");
+                }
+                finally
+                {
+                    // Note: Mix effect blocks from wrapper are automatically cleaned up by the wrapper
+                    // The wrapper itself handles COM object cleanup in its enumerator finalizers
+                }
             }
             catch (Exception ex)
             {

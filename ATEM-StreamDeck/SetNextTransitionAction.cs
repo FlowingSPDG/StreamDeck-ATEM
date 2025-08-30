@@ -68,9 +68,9 @@ namespace ATEM_StreamDeck
 
                 // Set up event handlers
                 Connection.OnSendToPlugin += Connection_OnSendToPlugin;
-                
+
                 InitializeATEMConnection();
-                
+
                 Logger.Instance.LogMessage(TracingLevel.INFO, "SetNextTransitionAction constructor completed");
             }
             catch (Exception ex)
@@ -288,7 +288,7 @@ namespace ATEM_StreamDeck
         {
             try
             {
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Set Next Transition Action - Key Pressed");
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"Set Next Transition Action - Key Pressed");
                 SetNextTransition();
             }
             catch (Exception ex)
@@ -297,12 +297,12 @@ namespace ATEM_StreamDeck
             }
         }
 
-        public override void KeyReleased(KeyPayload payload) 
+        public override void KeyReleased(KeyPayload payload)
         {
             // Set next transition action is performed on key press, no action needed on release
         }
 
-        public override void OnTick() 
+        public override void OnTick()
         {
             // Check connection status and retry if needed
             if (connection != null && !connection.IsConnected && !isRetrying)
@@ -331,7 +331,7 @@ namespace ATEM_StreamDeck
                 bool oldShowTally = settings.ShowTally;
 
                 Tools.AutoPopulateSettings(settings, payload.Settings);
-                
+
                 // If IP address changed, reconnect
                 if (oldIP != settings.ATEMIPAddress)
                 {
@@ -356,7 +356,7 @@ namespace ATEM_StreamDeck
 
                     UpdateButtonStateFromCache();
                 }
-                
+
                 SaveSettings();
             }
             catch (Exception ex)
@@ -399,7 +399,6 @@ namespace ATEM_StreamDeck
             
             return result;
         }
-
         private void SetNextTransition()
         {
             try
@@ -424,73 +423,83 @@ namespace ATEM_StreamDeck
                     return;
                 }
 
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"Setting next transition style to index {settings.TransitionStyle}");
-                
-                // Get the correct transition style enum value
-                var transitionStyle = GetTransitionStyleFromIndex(settings.TransitionStyle);
-                
-                // Convert duration to frames for ATEM API (with 2x multiplier and actual framerate)
-                uint transitionFrames = ConvertDurationToFrames(settings.TransitionDuration);
-                
-                // Setup transition parameters
-                var transitionParams = mixEffectBlock as IBMDSwitcherTransitionParameters;
-                if (transitionParams != null)
+                try
                 {
-                    try
+                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Setting next transition style to index {settings.TransitionStyle}");
+                    
+                    // Get the correct transition style enum value
+                    var transitionStyle = GetTransitionStyleFromIndex(settings.TransitionStyle);
+                    
+                    // Convert duration to frames for ATEM API (with 2x multiplier and actual framerate)
+                    uint transitionFrames = ConvertDurationToFrames(settings.TransitionDuration);
+                    
+                    // Setup transition parameters
+                    var transitionParams = mixEffectBlock as IBMDSwitcherTransitionParameters;
+                    if (transitionParams != null)
                     {
-                        transitionParams.SetNextTransitionStyle(transitionStyle);
-                        transitionParams.SetNextTransitionSelection(_BMDSwitcherTransitionSelection.bmdSwitcherTransitionSelectionBackground);
-                        
-                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Successfully set next transition style to {transitionStyle}");
-                        
-                        // Set transition rate based on style
-                        switch (transitionStyle)
+                        try
                         {
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleMix:
-                                var mixParams = mixEffectBlock as IBMDSwitcherTransitionMixParameters;
-                                if (mixParams != null)
-                                {
-                                    mixParams.SetRate(transitionFrames);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set mix transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleWipe:
-                                var wipeParams = mixEffectBlock as IBMDSwitcherTransitionWipeParameters;
-                                if (wipeParams != null)
-                                {
-                                    wipeParams.SetRate(transitionFrames);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set wipe transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDip:
-                                var dipParams = mixEffectBlock as IBMDSwitcherTransitionDipParameters;
-                                if (dipParams != null)
-                                {
-                                    dipParams.SetRate(transitionFrames);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set dip transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDVE:
-                                var dveParams = mixEffectBlock as IBMDSwitcherTransitionDVEParameters;
-                                if (dveParams != null)
-                                {
-                                    dveParams.SetRate(transitionFrames);
-                                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Set DVE transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
-                                }
-                                break;
-                            case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleStinger:
-                                // Stinger transitions typically don't have configurable rates
-                                Logger.Instance.LogMessage(TracingLevel.INFO, "Stinger transition selected (duration not configurable)");
-                                break;
-                        }
+                            transitionParams.SetNextTransitionStyle(transitionStyle);
+                            transitionParams.SetNextTransitionSelection(_BMDSwitcherTransitionSelection.bmdSwitcherTransitionSelectionBackground);
+                            
+                            Logger.Instance.LogMessage(TracingLevel.INFO, $"Successfully set next transition style to {transitionStyle}");
+                            
+                            // Set transition rate based on style
+                            switch (transitionStyle)
+                            {
+                                case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleMix:
+                                    var mixParams = mixEffectBlock as IBMDSwitcherTransitionMixParameters;
+                                    if (mixParams != null)
+                                    {
+                                        mixParams.SetRate(transitionFrames);
+                                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Set mix transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
+                                    }
+                                    break;
+                                case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleWipe:
+                                    var wipeParams = mixEffectBlock as IBMDSwitcherTransitionWipeParameters;
+                                    if (wipeParams != null)
+                                    {
+                                        wipeParams.SetRate(transitionFrames);
+                                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Set wipe transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
+                                    }
+                                    break;
+                                case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDip:
+                                    var dipParams = mixEffectBlock as IBMDSwitcherTransitionDipParameters;
+                                    if (dipParams != null)
+                                    {
+                                        dipParams.SetRate(transitionFrames);
+                                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Set dip transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
+                                    }
+                                    break;
+                                case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDVE:
+                                    var dveParams = mixEffectBlock as IBMDSwitcherTransitionDVEParameters;
+                                    if (dveParams != null)
+                                    {
+                                        dveParams.SetRate(transitionFrames);
+                                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Set DVE transition duration to {settings.TransitionDuration}s (actual: {settings.TransitionDuration * 2.0}s, {transitionFrames} frames)");
+                                    }
+                                    break;
+                                case _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleStinger:
+                                    // Stinger transitions typically don't have configurable rates
+                                    Logger.Instance.LogMessage(TracingLevel.INFO, "Stinger transition selected (duration not configurable)");
+                                    break;
+                            }
 
-                        Logger.Instance.LogMessage(TracingLevel.INFO, "Next transition configuration completed successfully");
+                            Logger.Instance.LogMessage(TracingLevel.INFO, "Next transition configuration completed successfully");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error setting transition parameters: {ex}");
+                            return;
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error setting transition parameters: {ex}");
-                        return;
-                    }
+                }
+                finally
+                {
+                    // Note: Mix effect blocks from wrapper are automatically cleaned up by the wrapper
+                    // The wrapper itself handles COM object cleanup in its enumerator finalizers
+                    // Additional interface casts (as IBMDSwitcherTransitionParameters, etc.) don't create new COM objects
+                    // They are just interface views of the same object, so no additional cleanup needed
                 }
             }
             catch (Exception ex)

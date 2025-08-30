@@ -357,9 +357,17 @@ namespace ATEM_StreamDeck
                     return;
                 }
 
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Performing auto transition with current transition settings");
-                mixEffectBlock.PerformAutoTransition();
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Auto transition completed successfully");
+                try
+                {
+                    Logger.Instance.LogMessage(TracingLevel.INFO, "Performing auto transition with current transition settings");
+                    mixEffectBlock.PerformAutoTransition();
+                    Logger.Instance.LogMessage(TracingLevel.INFO, "Auto transition completed successfully");
+                }
+                finally
+                {
+                    // Note: Mix effect blocks from wrapper are automatically cleaned up by the wrapper
+                    // The wrapper itself handles COM object cleanup in its enumerator finalizers
+                }
             }
             catch (Exception ex)
             {
