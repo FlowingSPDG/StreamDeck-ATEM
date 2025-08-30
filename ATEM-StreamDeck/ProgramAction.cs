@@ -42,7 +42,6 @@ namespace ATEM_StreamDeck
         private PluginSettings settings;
         private ATEMConnection connection;
         private bool isRetrying = false;
-        private bool isOnProgram = false;
 
         #endregion
 
@@ -51,7 +50,7 @@ namespace ATEM_StreamDeck
             try
             {
                 Logger.Instance.LogMessage(TracingLevel.INFO, "ProgramAction constructor called");
-                
+
                 if (payload.Settings == null || payload.Settings.Count == 0)
                 {
                     this.settings = PluginSettings.CreateDefaultSettings();
@@ -61,9 +60,9 @@ namespace ATEM_StreamDeck
                 {
                     this.settings = payload.Settings.ToObject<PluginSettings>();
                 }
-                
+
                 InitializeATEMConnection();
-                
+
                 Logger.Instance.LogMessage(TracingLevel.INFO, "ProgramAction constructor completed");
             }
             catch (Exception ex)
@@ -79,12 +78,12 @@ namespace ATEM_StreamDeck
             {
                 connection = ATEMConnectionManager.Instance.GetConnection(settings.ATEMIPAddress);
                 connection.ConnectionStateChanged += OnConnectionStateChanged;
-                
+
                 // Subscribe to global state changes
                 ATEMConnectionManager.Instance.StateChanged += OnATEMStateChanged;
-                
-                // Check initial state
-                CheckInitialProgramState();
+
+                // Update button state based on current cached state
+                UpdateButtonStateFromCache();
             }
         }
 
@@ -93,14 +92,14 @@ namespace ATEM_StreamDeck
             if (isConnected)
             {
                 Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
-                CheckInitialProgramState();
+                // Update button state when connection is established
+                UpdateButtonStateFromCache();
             }
             else
             {
                 Logger.Instance.LogMessage(TracingLevel.WARN, $"ATEM connection lost for {settings.ATEMIPAddress}");
-                // Reset button state when disconnected
-                isOnProgram = false;
-                UpdateButtonState();
+                // Show default state when disconnected
+                UpdateButtonStateFromCache();
             }
         }
 
@@ -115,15 +114,11 @@ namespace ATEM_StreamDeck
                 if (e.EventType == ATEMEventType.ProgramInputChanged)
                 {
                     long newProgramInput = (long)e.NewValue;
-                    bool newProgramState = (newProgramInput == settings.InputId);
+                    Logger.Instance.LogMessage(TracingLevel.INFO,
+                        $"Program input changed to {newProgramInput} for ME {settings.MixEffectBlock}");
                     
-                    if (isOnProgram != newProgramState)
-                    {
-                        isOnProgram = newProgramState;
-                        UpdateButtonState();
-                        Logger.Instance.LogMessage(TracingLevel.INFO, 
-                            $"Program button {settings.InputId} - program state changed: {(isOnProgram ? "ON PROGRAM" : "OFF PROGRAM")}");
-                    }
+                    // Update button state based on the new cached state
+                    UpdateButtonStateFromCache();
                 }
             }
             catch (Exception ex)
@@ -132,30 +127,7 @@ namespace ATEM_StreamDeck
             }
         }
 
-        private void CheckInitialProgramState()
-        {
-            try
-            {
-                if (connection == null || !connection.IsConnected)
-                    return;
-
-                var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(settings.ATEMIPAddress);
-                var meState = switcherState.GetMixEffectState(settings.MixEffectBlock);
-                
-                bool newProgramState = (meState.ProgramInput == settings.InputId);
-                if (isOnProgram != newProgramState)
-                {
-                    isOnProgram = newProgramState;
-                    UpdateButtonState();
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error checking initial program state: {ex}");
-            }
-        }
-
-        private void UpdateButtonState()
+        private void UpdateButtonStateFromCache()
         {
             try
             {
@@ -163,8 +135,12 @@ namespace ATEM_StreamDeck
                 {
                     // If tally is disabled, show default image
                     Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
+                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Button image set to DEFAULT (tally disabled for input {settings.InputId})");
                     return;
                 }
+
+                // Get current state from cache
+                bool isOnProgram = GetCurrentProgramState();
 
                 if (isOnProgram)
                 {
@@ -181,7 +157,35 @@ namespace ATEM_StreamDeck
             }
             catch (Exception ex)
             {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error updating button state: {ex}");
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error updating button state from cache: {ex}");
+                // Fallback to default image on error
+                Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
+            }
+        }
+
+        private bool GetCurrentProgramState()
+        {
+            try
+            {
+                if (connection == null || !connection.IsConnected)
+                {
+                    Logger.Instance.LogMessage(TracingLevel.DEBUG, $"Connection not available for input {settings.InputId}, returning false");
+                    return false;
+                }
+
+                var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(settings.ATEMIPAddress);
+                var meState = switcherState.GetMixEffectState(settings.MixEffectBlock);
+
+                bool isOnProgram = (meState.ProgramInput == settings.InputId);
+                Logger.Instance.LogMessage(TracingLevel.DEBUG, 
+                    $"Input {settings.InputId} program state: {isOnProgram} (current program: {meState.ProgramInput})");
+                
+                return isOnProgram;
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error getting current program state: {ex}");
+                return false;
             }
         }
 
@@ -191,7 +195,7 @@ namespace ATEM_StreamDeck
             {
                 // Unsubscribe from global state changes
                 ATEMConnectionManager.Instance.StateChanged -= OnATEMStateChanged;
-                
+
                 if (connection != null)
                 {
                     connection.ConnectionStateChanged -= OnConnectionStateChanged;
@@ -217,12 +221,12 @@ namespace ATEM_StreamDeck
             }
         }
 
-        public override void KeyReleased(KeyPayload payload) 
+        public override void KeyReleased(KeyPayload payload)
         {
             // Program action is performed on key press, no action needed on release
         }
 
-        public override void OnTick() 
+        public override void OnTick()
         {
             // Check connection status and retry if needed
             if (connection != null && !connection.IsConnected && !isRetrying)
@@ -252,7 +256,7 @@ namespace ATEM_StreamDeck
                 bool oldShowTally = settings.ShowTally;
 
                 Tools.AutoPopulateSettings(settings, payload.Settings);
-                
+
                 // If IP address changed, reconnect
                 if (oldIP != settings.ATEMIPAddress)
                 {
@@ -262,17 +266,14 @@ namespace ATEM_StreamDeck
                     }
                     InitializeATEMConnection();
                 }
-                // If Mix Effect Block or Input ID changed, check initial state
-                else if (oldMixEffectBlock != settings.MixEffectBlock || oldInputId != settings.InputId)
+                // If any settings that affect state changed, update button state
+                else if (oldMixEffectBlock != settings.MixEffectBlock || 
+                         oldInputId != settings.InputId || 
+                         oldShowTally != settings.ShowTally)
                 {
-                    CheckInitialProgramState();
+                    UpdateButtonStateFromCache();
                 }
-                // If tally setting changed, update button state
-                else if (oldShowTally != settings.ShowTally)
-                {
-                    UpdateButtonState();
-                }
-                
+
                 SaveSettings();
             }
             catch (Exception ex)

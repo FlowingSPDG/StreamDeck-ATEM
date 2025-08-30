@@ -17,8 +17,8 @@ namespace ATEM_StreamDeck
             public static PluginSettings CreateDefaultSettings()
             {
                 PluginSettings instance = new PluginSettings();
-                instance.ATEMIPAddress = "192.168.1.101";
-                instance.MixEffectBlock = 0;
+                instance.ATEMIPAddress = ATEMConstants.DEFAULT_ATEM_IP;
+                instance.MixEffectBlock = ATEMConstants.DEFAULT_MIX_EFFECT_BLOCK;
                 return instance;
             }
 
@@ -34,7 +34,6 @@ namespace ATEM_StreamDeck
         private PluginSettings settings;
         private ATEMConnection connection;
         private bool isRetrying = false;
-        private bool isInTransition = false;
 
         #endregion
 
@@ -75,8 +74,8 @@ namespace ATEM_StreamDeck
                 // Subscribe to global state changes
                 ATEMConnectionManager.Instance.StateChanged += OnATEMStateChanged;
                 
-                // Check initial state
-                CheckInitialTransitionState();
+                // Update button state based on current cached state
+                UpdateButtonStateFromCache();
             }
         }
 
@@ -85,14 +84,14 @@ namespace ATEM_StreamDeck
             if (isConnected)
             {
                 Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
-                CheckInitialTransitionState();
+                // Update button state when connection is established
+                UpdateButtonStateFromCache();
             }
             else
             {
                 Logger.Instance.LogMessage(TracingLevel.WARN, $"ATEM connection lost for {settings.ATEMIPAddress}");
-                // Reset button state when disconnected
-                isInTransition = false;
-                UpdateButtonState();
+                // Show default state when disconnected
+                UpdateButtonStateFromCache();
             }
         }
 
@@ -107,13 +106,11 @@ namespace ATEM_StreamDeck
                 if (e.EventType == ATEMEventType.TransitionStateChanged)
                 {
                     bool newTransitionState = (bool)e.NewValue;
-                    if (isInTransition != newTransitionState)
-                    {
-                        isInTransition = newTransitionState;
-                        UpdateButtonState();
-                        Logger.Instance.LogMessage(TracingLevel.INFO, 
-                            $"Auto Transition button - transition state changed: {(isInTransition ? "IN TRANSITION" : "IDLE")}");
-                    }
+                    Logger.Instance.LogMessage(TracingLevel.INFO, 
+                        $"Transition state changed to {(newTransitionState ? "IN TRANSITION" : "IDLE")} for ME {settings.MixEffectBlock}");
+                    
+                    // Update button state based on the new cached state
+                    UpdateButtonStateFromCache();
                 }
             }
             catch (Exception ex)
@@ -122,32 +119,13 @@ namespace ATEM_StreamDeck
             }
         }
 
-        private void CheckInitialTransitionState()
+        private void UpdateButtonStateFromCache()
         {
             try
             {
-                if (connection == null || !connection.IsConnected)
-                    return;
+                // Get current state from cache
+                bool isInTransition = GetCurrentTransitionState();
 
-                var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(settings.ATEMIPAddress);
-                var meState = switcherState.GetMixEffectState(settings.MixEffectBlock);
-                
-                if (isInTransition != meState.IsInTransition)
-                {
-                    isInTransition = meState.IsInTransition;
-                    UpdateButtonState();
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error checking initial transition state: {ex}");
-            }
-        }
-
-        private void UpdateButtonState()
-        {
-            try
-            {
                 if (isInTransition)
                 {
                     // Set button to red image when in transition
@@ -156,14 +134,42 @@ namespace ATEM_StreamDeck
                 }
                 else
                 {
-                    // Set button to green image when not in transition
+                    // Set button to default image when not in transition
                     Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
-                    Logger.Instance.LogMessage(TracingLevel.INFO, "Button image set to GREEN (idle)");
+                    Logger.Instance.LogMessage(TracingLevel.INFO, "Button image set to DEFAULT (idle)");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error updating button state: {ex}");
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error updating button state from cache: {ex}");
+                // Fallback to default image on error
+                Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
+            }
+        }
+
+        private bool GetCurrentTransitionState()
+        {
+            try
+            {
+                if (connection == null || !connection.IsConnected)
+                {
+                    Logger.Instance.LogMessage(TracingLevel.DEBUG, $"Connection not available for ME {settings.MixEffectBlock}, returning false");
+                    return false;
+                }
+
+                var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(settings.ATEMIPAddress);
+                var meState = switcherState.GetMixEffectState(settings.MixEffectBlock);
+
+                bool isInTransition = meState.IsInTransition;
+                Logger.Instance.LogMessage(TracingLevel.DEBUG, 
+                    $"ME {settings.MixEffectBlock} transition state: {isInTransition}");
+                
+                return isInTransition;
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error getting current transition state: {ex}");
+                return false;
             }
         }
 
@@ -241,10 +247,10 @@ namespace ATEM_StreamDeck
                     }
                     InitializeATEMConnection();
                 }
-                // If Mix Effect Block changed, check initial state
+                // If Mix Effect Block changed, update button state
                 else if (oldMixEffectBlock != settings.MixEffectBlock)
                 {
-                    CheckInitialTransitionState();
+                    UpdateButtonStateFromCache();
                 }
                 
                 SaveSettings();
