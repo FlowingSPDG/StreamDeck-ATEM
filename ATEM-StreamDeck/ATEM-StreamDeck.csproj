@@ -81,6 +81,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ATEMActionBase.cs" />
+    <Compile Include="ATEMActionSettings.cs" />
     <Compile Include="ATEMConnectionManager.cs" />
     <Compile Include="ATEMConstants.cs" />
     <Compile Include="AutoTransitionAction.cs" />

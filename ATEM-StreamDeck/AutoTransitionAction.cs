@@ -1,138 +1,103 @@
 using BarRaider.SdTools;
 using BarRaider.SdTools.Payloads;
-using BarRaider.SdTools.Wrappers;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
-using System.Linq;
 using System.Threading.Tasks;
 using BMDSwitcherAPI;
 
 namespace ATEM_StreamDeck
 {
     [PluginActionId("dev.flowingspdg.atem.autotransition")]
-    public class AutoTransitionAction : KeypadBase
+    public class AutoTransitionAction : ATEMActionBase
     {
-        private class PluginSettings
-        {
-            public static PluginSettings CreateDefaultSettings()
-            {
-                PluginSettings instance = new PluginSettings();
-                instance.ATEMIPAddress = ATEMConstants.DEFAULT_ATEM_IP;
-                instance.MixEffectBlock = ATEMConstants.DEFAULT_MIX_EFFECT_BLOCK;
-                return instance;
-            }
-
-            [JsonProperty(PropertyName = "atemIPAddress")]
-            public string ATEMIPAddress { get; set; }
-
-            [JsonProperty(PropertyName = "mixEffectBlock")]
-            public int MixEffectBlock { get; set; }
-        }
-
         #region Private Members
 
-        private PluginSettings settings;
-        private ATEMConnection connection;
-        private bool isRetrying = false;
+        private TransitionActionSettings settings;
 
         #endregion
 
+        #region Protected Properties Override
+
+        protected override string ATEMIPAddress => settings?.ATEMIPAddress ?? ATEMConstants.DEFAULT_ATEM_IP;
+        protected override int MixEffectBlock => settings?.MixEffectBlock ?? ATEMConstants.DEFAULT_MIX_EFFECT_BLOCK;
+        protected override bool SupportsStateMonitoring => true;
+
+        #endregion
+
+        #region Constructor
+
         public AutoTransitionAction(SDConnection connection, InitialPayload payload) : base(connection, payload)
         {
-            try
-            {
-                Logger.Instance.LogMessage(TracingLevel.INFO, "AutoTransitionAction constructor called");
-                
-                if (payload.Settings == null || payload.Settings.Count == 0)
-                {
-                    this.settings = PluginSettings.CreateDefaultSettings();
-                    SaveSettings();
-                }
-                else
-                {
-                    this.settings = payload.Settings.ToObject<PluginSettings>();
-                }
-
-                // Set up event handlers
-                Connection.OnSendToPlugin += Connection_OnSendToPlugin;
-
-                InitializeATEMConnection();
-                
-                Logger.Instance.LogMessage(TracingLevel.INFO, "AutoTransitionAction constructor completed");
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in AutoTransitionAction constructor: {ex}");
-                this.settings = PluginSettings.CreateDefaultSettings();
-            }
         }
 
-        private void Connection_OnSendToPlugin(object sender, SDEventReceivedEventArgs<BarRaider.SdTools.Events.SendToPlugin> e)
-        {
-            try
-            {
-                var payload = e.Event.Payload;
-                if (payload != null && payload["action"]?.ToString() == "getATEMInfo")
-                {
-                    string requestedIP = payload["ipAddress"]?.ToString();
-                    if (!string.IsNullOrEmpty(requestedIP))
-                    {
-                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Received ATEM info request for IP: {requestedIP}");
-                        
-                        // Update IP if different
-                        if (requestedIP != settings.ATEMIPAddress)
-                        {
-                            settings.ATEMIPAddress = requestedIP;
-                            InitializeATEMConnection();
-                            SaveSettings();
-                        }
+        #endregion
 
-                        // Send current ATEM info
-                        SendATEMInfoToPropertyInspector();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in SendToPlugin event handler: {ex}");
-            }
-        }
+        #region Abstract Methods Implementation
 
-        private void InitializeATEMConnection()
+        protected override void InitializeSettings(InitialPayload payload)
         {
-            if (!string.IsNullOrEmpty(settings.ATEMIPAddress))
+            if (payload.Settings == null || payload.Settings.Count == 0)
             {
-                connection = ATEMConnectionManager.Instance.GetConnection(settings.ATEMIPAddress);
-                connection.ConnectionStateChanged += OnConnectionStateChanged;
-                
-                // Subscribe to global state changes
-                ATEMConnectionManager.Instance.StateChanged += OnATEMStateChanged;
-                
-                // Update button state based on current cached state
-                UpdateButtonStateFromCache();
-            }
-        }
-
-        private void OnConnectionStateChanged(object sender, bool isConnected)
-        {
-            if (isConnected)
-            {
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
-                // Send ATEM info to Property Inspector when connected
-                SendATEMInfoToPropertyInspector();
-                // Update button state when connection is established
-                UpdateButtonStateFromCache();
+                this.settings = new TransitionActionSettings();
+                this.settings.SetDefaults();
+                SaveSettings();
             }
             else
             {
-                Logger.Instance.LogMessage(TracingLevel.WARN, $"ATEM connection lost for {settings.ATEMIPAddress}");
-                // Show default state when disconnected
-                UpdateButtonStateFromCache();
+                this.settings = payload.Settings.ToObject<TransitionActionSettings>();
             }
         }
 
-        private void OnATEMStateChanged(object sender, ATEMStateChangeEventArgs e)
+        protected override void InitializeDefaultSettings()
+        {
+            this.settings = new TransitionActionSettings();
+            this.settings.SetDefaults();
+        }
+
+        protected override async Task SaveSettings()
+        {
+            try
+            {
+                await Connection.SetSettingsAsync(JObject.FromObject(settings));
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in SaveSettings: {ex}");
+            }
+        }
+
+        protected override void HandleSettingsUpdate(ReceivedSettingsPayload payload)
+        {
+            string oldIP = settings.ATEMIPAddress;
+            int oldMixEffectBlock = settings.MixEffectBlock;
+            bool oldShowTally = settings.ShowTally;
+
+            Tools.AutoPopulateSettings(settings, payload.Settings);
+
+            // If IP address changed, reconnect
+            if (oldIP != settings.ATEMIPAddress)
+            {
+                HandleReconnection();
+            }
+            // If Mix Effect Block or tally setting changed, update button state
+            else if (oldMixEffectBlock != settings.MixEffectBlock || oldShowTally != settings.ShowTally)
+            {
+                UpdateButtonStateFromCache();
+            }
+
+            SaveSettings();
+        }
+
+        protected override void PerformAction()
+        {
+            PerformAutoTransition();
+        }
+
+        #endregion
+
+        #region Virtual Methods Override
+
+        protected override void OnATEMStateChanged(object sender, ATEMStateChangeEventArgs e)
         {
             try
             {
@@ -156,10 +121,17 @@ namespace ATEM_StreamDeck
             }
         }
 
-        private void UpdateButtonStateFromCache()
+        protected override void UpdateButtonStateFromCache()
         {
             try
             {
+                if (!settings.ShowTally)
+                {
+                    // If tally is disabled, show default image
+                    Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
+                    return;
+                }
+
                 // Get current state from cache
                 bool isInTransition = GetCurrentTransitionState();
 
@@ -181,6 +153,34 @@ namespace ATEM_StreamDeck
                 Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error updating button state from cache: {ex}");
                 // Fallback to default image on error
                 Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
+            }
+        }
+
+        protected override void OnIPAddressChangeRequested(string newIPAddress)
+        {
+            settings.ATEMIPAddress = newIPAddress;
+            HandleReconnection();
+            SaveSettings();
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        private void PerformAutoTransition()
+        {
+            try
+            {
+                var mixEffectBlock = GetMixEffectBlock();
+                if (mixEffectBlock == null) return;
+
+                Logger.Instance.LogMessage(TracingLevel.INFO, "Performing auto transition with current transition settings");
+                mixEffectBlock.PerformAutoTransition();
+                Logger.Instance.LogMessage(TracingLevel.INFO, "Auto transition completed successfully");
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error performing auto transition: {ex}");
             }
         }
 
@@ -207,184 +207,6 @@ namespace ATEM_StreamDeck
             {
                 Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error getting current transition state: {ex}");
                 return false;
-            }
-        }
-
-        private void SendATEMInfoToPropertyInspector()
-        {
-            try
-            {
-                var switcherInfo = ATEMConnectionManager.Instance.GetSwitcherInfo(settings.ATEMIPAddress);
-                if (switcherInfo.LastUpdated == DateTime.MinValue)
-                {
-                    Logger.Instance.LogMessage(TracingLevel.DEBUG, "ATEM info not yet cached, skipping PI update");
-                    return;
-                }
-
-                var atemInfoPayload = new
-                {
-                    action = "atemInfoResponse",
-                    ipAddress = settings.ATEMIPAddress,
-                    mixEffectCount = switcherInfo.MixEffectCount,
-                    inputCount = switcherInfo.InputCount
-                };
-
-                Connection.SendToPropertyInspectorAsync(JObject.FromObject(atemInfoPayload));
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"Sent ATEM info to Property Inspector: {switcherInfo.MixEffectCount} ME blocks");
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error sending ATEM info to Property Inspector: {ex}");
-            }
-        }
-
-        public override void Dispose()
-        {
-            try
-            {
-                // Unsubscribe from events
-                Connection.OnSendToPlugin -= Connection_OnSendToPlugin;
-
-                // Unsubscribe from global state changes
-                ATEMConnectionManager.Instance.StateChanged -= OnATEMStateChanged;
-                
-                if (connection != null)
-                {
-                    connection.ConnectionStateChanged -= OnConnectionStateChanged;
-                }
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"AutoTransitionAction Dispose called");
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in Dispose: {ex}");
-            }
-        }
-
-        public override void KeyPressed(KeyPayload payload)
-        {
-            try
-            {
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Auto Transition Action - Key Pressed");
-                PerformAutoTransition();
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in KeyPressed: {ex}");
-            }
-        }
-
-        public override void KeyReleased(KeyPayload payload) 
-        {
-            // Auto transition action is performed on key press, no action needed on release
-        }
-
-        public override void OnTick() 
-        {
-            // Check connection status and retry if needed
-            if (connection != null && !connection.IsConnected && !isRetrying)
-            {
-                Task.Run(async () =>
-                {
-                    isRetrying = true;
-                    try
-                    {
-                        await connection.TryReconnect();
-                    }
-                    finally
-                    {
-                        isRetrying = false;
-                    }
-                });
-            }
-        }
-
-        public override void ReceivedSettings(ReceivedSettingsPayload payload)
-        {
-            try
-            {
-                string oldIP = settings.ATEMIPAddress;
-                int oldMixEffectBlock = settings.MixEffectBlock;
-                Tools.AutoPopulateSettings(settings, payload.Settings);
-                
-                // If IP address changed, reconnect
-                if (oldIP != settings.ATEMIPAddress)
-                {
-                    if (connection != null)
-                    {
-                        connection.ConnectionStateChanged -= OnConnectionStateChanged;
-                    }
-                    InitializeATEMConnection();
-                }
-                // If Mix Effect Block changed, update button state
-                else if (oldMixEffectBlock != settings.MixEffectBlock)
-                {
-                    UpdateButtonStateFromCache();
-                }
-                
-                SaveSettings();
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in ReceivedSettings: {ex}");
-            }
-        }
-
-        public override void ReceivedGlobalSettings(ReceivedGlobalSettingsPayload payload) { }
-
-        #region Private Methods
-
-        private async void PerformAutoTransition()
-        {
-            try
-            {
-                if (connection == null || !connection.IsConnected)
-                {
-                    Logger.Instance.LogMessage(TracingLevel.WARN, "ATEM not connected, cannot perform auto transition");
-                    return;
-                }
-
-                var switcherWrapper = connection.GetSwitcherWrapper();
-                if (switcherWrapper == null)
-                {
-                    Logger.Instance.LogMessage(TracingLevel.ERROR, "Failed to get switcher wrapper");
-                    return;
-                }
-
-                var mixEffectBlock = switcherWrapper.MixEffectBlocks.ElementAtOrDefault(settings.MixEffectBlock);
-                if (mixEffectBlock == null)
-                {
-                    Logger.Instance.LogMessage(TracingLevel.ERROR, $"Mix Effect Block {settings.MixEffectBlock} not found");
-                    return;
-                }
-
-                try
-                {
-                    Logger.Instance.LogMessage(TracingLevel.INFO, "Performing auto transition with current transition settings");
-                    mixEffectBlock.PerformAutoTransition();
-                    Logger.Instance.LogMessage(TracingLevel.INFO, "Auto transition completed successfully");
-                }
-                finally
-                {
-                    // Note: Mix effect blocks from wrapper are automatically cleaned up by the wrapper
-                    // The wrapper itself handles COM object cleanup in its enumerator finalizers
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error performing auto transition: {ex}");
-            }
-        }
-
-        private Task SaveSettings()
-        {
-            try
-            {
-                return Connection.SetSettingsAsync(JObject.FromObject(settings));
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in SaveSettings: {ex}");
-                return Task.CompletedTask;
             }
         }
 

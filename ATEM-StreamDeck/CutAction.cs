@@ -1,6 +1,5 @@
 using BarRaider.SdTools;
 using BarRaider.SdTools.Payloads;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Linq;
@@ -11,165 +10,90 @@ using BMDSwitcherAPI;
 namespace ATEM_StreamDeck
 {
     [PluginActionId("dev.flowingspdg.atem.cutaction")]
-    public class CutAction : KeypadBase
+    public class CutAction : ATEMActionBase
     {
-        private class PluginSettings
-        {
-            public static PluginSettings CreateDefaultSettings()
-            {
-                PluginSettings instance = new PluginSettings();
-                instance.ATEMIPAddress = "192.168.1.101";
-                instance.MixEffectBlock = 0;
-                return instance;
-            }
-
-            [JsonProperty(PropertyName = "atemIPAddress")]
-            public string ATEMIPAddress { get; set; }
-
-            [JsonProperty(PropertyName = "mixEffectBlock")]
-            public int MixEffectBlock { get; set; }
-        }
-
         #region Private Members
 
-        private PluginSettings settings;
-        private ATEMConnection connection;
-        private bool isRetrying = false;
+        private BasicActionSettings settings;
 
         #endregion
 
+        #region Protected Properties Override
+
+        protected override string ATEMIPAddress => settings?.ATEMIPAddress ?? ATEMConstants.DEFAULT_ATEM_IP;
+        protected override int MixEffectBlock => settings?.MixEffectBlock ?? ATEMConstants.DEFAULT_MIX_EFFECT_BLOCK;
+        protected override bool SupportsPropertyInspector => false;
+        protected override bool SupportsStateMonitoring => false;
+
+        #endregion
+
+        #region Constructor
+
         public CutAction(SDConnection connection, InitialPayload payload) : base(connection, payload)
         {
-            try
-            {
-                Logger.Instance.LogMessage(TracingLevel.INFO, "CutAction constructor called");
-                
-                if (payload.Settings == null || payload.Settings.Count == 0)
-                {
-                    this.settings = PluginSettings.CreateDefaultSettings();
-                    SaveSettings();
-                }
-                else
-                {
-                    this.settings = payload.Settings.ToObject<PluginSettings>();
-                }
-                
-                InitializeATEMConnection();
-                
-                Logger.Instance.LogMessage(TracingLevel.INFO, "CutAction constructor completed");
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in CutAction constructor: {ex}");
-                this.settings = PluginSettings.CreateDefaultSettings();
-            }
         }
 
-        private void InitializeATEMConnection()
-        {
-            if (!string.IsNullOrEmpty(settings.ATEMIPAddress))
-            {
-                connection = ATEMConnectionManager.Instance.GetConnection(settings.ATEMIPAddress);
-                connection.ConnectionStateChanged += OnConnectionStateChanged;
-            }
-        }
+        #endregion
 
-        private void OnConnectionStateChanged(object sender, bool isConnected)
+        #region Abstract Methods Implementation
+
+        protected override void InitializeSettings(InitialPayload payload)
         {
-            if (isConnected)
+            if (payload.Settings == null || payload.Settings.Count == 0)
             {
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
+                this.settings = new BasicActionSettings();
+                this.settings.SetDefaults();
+                SaveSettings();
             }
             else
             {
-                Logger.Instance.LogMessage(TracingLevel.WARN, $"ATEM connection lost for {settings.ATEMIPAddress}");
+                this.settings = payload.Settings.ToObject<BasicActionSettings>();
             }
         }
 
-        public override void Dispose()
+        protected override void InitializeDefaultSettings()
+        {
+            this.settings = new BasicActionSettings();
+            this.settings.SetDefaults();
+        }
+
+        protected override async Task SaveSettings()
         {
             try
             {
-                if (connection != null)
-                {
-                    connection.ConnectionStateChanged -= OnConnectionStateChanged;
-                }
-                Logger.Instance.LogMessage(TracingLevel.INFO, $"CutAction Dispose called");
+                await Connection.SetSettingsAsync(JObject.FromObject(settings));
             }
             catch (Exception ex)
             {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in Dispose: {ex}");
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in SaveSettings: {ex}");
             }
         }
 
-        public override void KeyPressed(KeyPayload payload)
+        protected override void HandleSettingsUpdate(ReceivedSettingsPayload payload)
         {
-            try
+            string oldIP = settings.ATEMIPAddress;
+
+            Tools.AutoPopulateSettings(settings, payload.Settings);
+
+            // If IP address changed, reconnect
+            if (oldIP != settings.ATEMIPAddress)
             {
-                Logger.Instance.LogMessage(TracingLevel.INFO, "Cut Action - Key Pressed");
-                PerformCut();
+                HandleReconnection();
             }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in KeyPressed: {ex}");
-            }
+
+            SaveSettings();
         }
 
-        public override void KeyReleased(KeyPayload payload) 
+        protected override void PerformAction()
         {
-            // Cut action is performed on key press, no action needed on release
+            PerformCut();
         }
 
-        public override void OnTick() 
-        {
-            // Check connection status and retry if needed
-            if (connection != null && !connection.IsConnected && !isRetrying)
-            {
-                Task.Run(async () =>
-                {
-                    isRetrying = true;
-                    try
-                    {
-                        await connection.TryReconnect();
-                    }
-                    finally
-                    {
-                        isRetrying = false;
-                    }
-                });
-            }
-        }
-
-        public override void ReceivedSettings(ReceivedSettingsPayload payload)
-        {
-            try
-            {
-                string oldIP = settings.ATEMIPAddress;
-                Tools.AutoPopulateSettings(settings, payload.Settings);
-                
-                // If IP address changed, reconnect
-                if (oldIP != settings.ATEMIPAddress)
-                {
-                    if (connection != null)
-                    {
-                        connection.ConnectionStateChanged -= OnConnectionStateChanged;
-                    }
-                    InitializeATEMConnection();
-                }
-                
-                SaveSettings();
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in ReceivedSettings: {ex}");
-            }
-        }
-
-        public override void ReceivedGlobalSettings(ReceivedGlobalSettingsPayload payload) { }
+        #endregion
 
         #region Private Methods
 
-        private async void PerformCut()
+        private void PerformCut()
         {
             try
             {
@@ -238,19 +162,6 @@ namespace ATEM_StreamDeck
             catch (Exception ex)
             {
                 Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error performing cut: {ex}");
-            }
-        }
-
-        private Task SaveSettings()
-        {
-            try
-            {
-                return Connection.SetSettingsAsync(JObject.FromObject(settings));
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in SaveSettings: {ex}");
-                return Task.CompletedTask;
             }
         }
 
