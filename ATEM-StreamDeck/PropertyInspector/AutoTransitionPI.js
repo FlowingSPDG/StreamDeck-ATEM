@@ -12,6 +12,12 @@ function initPropertyInspector() {
         atemIPElement.addEventListener('blur', onATEMIPChanged);
     }
     
+    // Set up custom change handler for showTally checkbox
+    const showTallyElement = document.getElementById('showTally');
+    if (showTallyElement) {
+        showTallyElement.addEventListener('change', onShowTallyChanged);
+    }
+    
     // Request ATEM info for current IP if available
     setTimeout(() => {
         const currentIP = atemIPElement?.value;
@@ -19,6 +25,13 @@ function initPropertyInspector() {
             requestATEMInfo(currentIP);
         }
     }, 500);
+}
+
+// Handle Show Tally checkbox changes
+function onShowTallyChanged(event) {
+    console.log('Show Tally changed to:', event.target.checked);
+    // Force immediate settings save with correct boolean value
+    setSettings();
 }
 
 // Handle ATEM IP address changes
@@ -105,5 +118,78 @@ function updateMixEffectOptions(meCount) {
         mixEffectElement.value = 0;
         // Trigger settings update
         setSettings();
+    }
+}
+
+// Load configuration (called by easypi-v2)
+function loadConfiguration(settings) {
+    console.log('Loading configuration:', settings);
+    
+    // Load ATEM IP Address
+    const atemIPElement = document.getElementById('atemIPAddress');
+    if (atemIPElement && settings.atemIPAddress) {
+        atemIPElement.value = settings.atemIPAddress;
+    }
+    
+    // Load Mix Effect Block
+    const mixEffectElement = document.getElementById('mixEffectBlock');
+    if (mixEffectElement && settings.mixEffectBlock !== undefined) {
+        mixEffectElement.value = settings.mixEffectBlock;
+    }
+    
+    // Load Show Tally setting with safe boolean conversion
+    const showTallyElement = document.getElementById('showTally');
+    if (showTallyElement) {
+        let showTallyValue = false;
+        if (settings.showTally !== undefined) {
+            if (typeof settings.showTally === 'boolean') {
+                showTallyValue = settings.showTally;
+            } else {
+                // Handle string values from previous versions
+                const tallyStr = settings.showTally.toString().toLowerCase();
+                showTallyValue = tallyStr === 'true' || tallyStr === 'on' || tallyStr === '1';
+            }
+        }
+        showTallyElement.checked = showTallyValue;
+        console.log('Show Tally loaded as:', showTallyValue);
+    }
+    
+    // Request ATEM info to update UI if IP is available
+    if (settings.atemIPAddress) {
+        requestATEMInfo(settings.atemIPAddress);
+    }
+}
+
+// Override setSettings to ensure proper boolean values
+function setSettings() {
+    const settings = {};
+    
+    // Get ATEM IP Address
+    const atemIPElement = document.getElementById('atemIPAddress');
+    if (atemIPElement) {
+        settings.atemIPAddress = atemIPElement.value;
+    }
+    
+    // Get Mix Effect Block
+    const mixEffectElement = document.getElementById('mixEffectBlock');
+    if (mixEffectElement) {
+        settings.mixEffectBlock = parseInt(mixEffectElement.value);
+    }
+    
+    // Get Show Tally as proper boolean
+    const showTallyElement = document.getElementById('showTally');
+    if (showTallyElement) {
+        settings.showTally = showTallyElement.checked; // This will be a proper boolean
+    }
+    
+    console.log('Saving settings:', settings);
+    
+    // Send to plugin
+    if (websocket && websocket.readyState === 1) {
+        websocket.send(JSON.stringify({
+            event: 'setSettings',
+            context: uuid,
+            payload: settings
+        }));
     }
 }

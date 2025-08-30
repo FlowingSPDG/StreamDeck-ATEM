@@ -44,7 +44,15 @@ namespace ATEM_StreamDeck
             }
             else
             {
-                this.settings = payload.Settings.ToObject<TransitionActionSettings>();
+                try
+                {
+                    this.settings = payload.Settings.ToObject<TransitionActionSettings>();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error deserializing settings, using safe conversion: {ex}");
+                    this.settings = SafeConvertSettings(payload.Settings);
+                }
             }
         }
 
@@ -72,7 +80,16 @@ namespace ATEM_StreamDeck
             int oldMixEffectBlock = settings.MixEffectBlock;
             bool oldShowTally = settings.ShowTally;
 
-            Tools.AutoPopulateSettings(settings, payload.Settings);
+            try
+            {
+                Tools.AutoPopulateSettings(settings, payload.Settings);
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in AutoPopulateSettings, using safe conversion: {ex}");
+                var safeSettings = SafeConvertSettings(payload.Settings);
+                this.settings = safeSettings;
+            }
 
             // If IP address changed, reconnect
             if (oldIP != settings.ATEMIPAddress)
@@ -208,6 +225,45 @@ namespace ATEM_StreamDeck
                 Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error getting current transition state: {ex}");
                 return false;
             }
+        }
+
+        private TransitionActionSettings SafeConvertSettings(JObject settingsObject)
+        {
+            var result = new TransitionActionSettings();
+            result.SetDefaults();
+
+            try
+            {
+                // Safe conversion for ATEM IP Address
+                if (settingsObject["atemIPAddress"] != null)
+                {
+                    result.ATEMIPAddress = settingsObject["atemIPAddress"].ToString();
+                }
+
+                // Safe conversion for Mix Effect Block
+                if (settingsObject["mixEffectBlock"] != null)
+                {
+                    if (int.TryParse(settingsObject["mixEffectBlock"].ToString(), out int meBlock))
+                    {
+                        result.MixEffectBlock = meBlock;
+                    }
+                }
+
+                // Safe conversion for ShowTally
+                if (settingsObject["showTally"] != null)
+                {
+                    var tallyValue = settingsObject["showTally"].ToString().ToLowerInvariant();
+                    result.ShowTally = tallyValue == "true" || tallyValue == "on" || tallyValue == "1";
+                }
+
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"Safe conversion completed: IP={result.ATEMIPAddress}, ME={result.MixEffectBlock}, ShowTally={result.ShowTally}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in safe conversion, using defaults: {ex}");
+            }
+
+            return result;
         }
 
         #endregion

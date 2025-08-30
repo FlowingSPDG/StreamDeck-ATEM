@@ -26,9 +26,17 @@
             </select>
         </div>
         <div class="sdpi-item">
+            <div class="sdpi-item-label">Show Transition State:</div>
+            <div class="sdpi-item-value">
+                <input type="checkbox" class="sdProperty" id="showTally" onchange="setSettings()">
+                <label for="showTally" class="sdpi-item-label"><span></span>Light up red when transitioning</label>
+            </div>
+        </div>
+        <div class="sdpi-item">
             <div class="sdpi-item-label empty"></div>
             <div class="sdpi-item-value">
                 <p>Configure your ATEM switcher settings. The Auto Transition will perform a transition using the currently configured transition style and rate on the selected Mix Effect block.</p>
+                <p>When "Show Transition State" is enabled, the button will light up red during transitions.</p>
             </div>
         </div>
     </div>
