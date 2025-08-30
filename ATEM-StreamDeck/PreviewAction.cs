@@ -1,5 +1,6 @@
 using BarRaider.SdTools;
 using BarRaider.SdTools.Payloads;
+using BarRaider.SdTools.Wrappers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -20,7 +21,8 @@ namespace ATEM_StreamDeck
                 instance.ATEMIPAddress = ATEMConstants.DEFAULT_ATEM_IP;
                 instance.MixEffectBlock = ATEMConstants.DEFAULT_MIX_EFFECT_BLOCK;
                 instance.InputId = 1;
-                instance.ShowTally = true;
+                instance.TallyForPreview = true;
+                instance.TallyForProgram = false;
                 return instance;
             }
 
@@ -33,8 +35,19 @@ namespace ATEM_StreamDeck
             [JsonProperty(PropertyName = "inputId")]
             public long InputId { get; set; }
 
+            [JsonProperty(PropertyName = "tallyForPreview")]
+            public bool TallyForPreview { get; set; }
+
+            [JsonProperty(PropertyName = "tallyForProgram")]
+            public bool TallyForProgram { get; set; }
+
+            // Backward compatibility
             [JsonProperty(PropertyName = "showTally")]
-            public bool ShowTally { get; set; }
+            public bool ShowTally
+            {
+                get => TallyForPreview;
+                set => TallyForPreview = value;
+            }
         }
 
         #region Private Members
@@ -61,6 +74,9 @@ namespace ATEM_StreamDeck
                     this.settings = payload.Settings.ToObject<PluginSettings>();
                 }
 
+                // Set up event handlers
+                Connection.OnSendToPlugin += Connection_OnSendToPlugin;
+
                 InitializeATEMConnection();
 
                 Logger.Instance.LogMessage(TracingLevel.INFO, "PreviewAction constructor completed");
@@ -69,6 +85,37 @@ namespace ATEM_StreamDeck
             {
                 Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in PreviewAction constructor: {ex}");
                 this.settings = PluginSettings.CreateDefaultSettings();
+            }
+        }
+
+        private void Connection_OnSendToPlugin(object sender, SDEventReceivedEventArgs<BarRaider.SdTools.Events.SendToPlugin> e)
+        {
+            try
+            {
+                var payload = e.Event.Payload;
+                if (payload != null && payload["action"]?.ToString() == "getATEMInfo")
+                {
+                    string requestedIP = payload["ipAddress"]?.ToString();
+                    if (!string.IsNullOrEmpty(requestedIP))
+                    {
+                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Received ATEM info request for IP: {requestedIP}");
+                        
+                        // Update IP if different
+                        if (requestedIP != settings.ATEMIPAddress)
+                        {
+                            settings.ATEMIPAddress = requestedIP;
+                            InitializeATEMConnection();
+                            SaveSettings();
+                        }
+
+                        // Send current ATEM info
+                        SendATEMInfoToPropertyInspector();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in SendToPlugin event handler: {ex}");
             }
         }
 
@@ -92,6 +139,8 @@ namespace ATEM_StreamDeck
             if (isConnected)
             {
                 Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
+                // Send ATEM info to Property Inspector when connected
+                SendATEMInfoToPropertyInspector();
                 // Update button state when connection is established
                 UpdateButtonStateFromCache();
             }
@@ -111,11 +160,11 @@ namespace ATEM_StreamDeck
                 if (e.IPAddress != settings.ATEMIPAddress || e.MixEffectIndex != settings.MixEffectBlock)
                     return;
 
-                if (e.EventType == ATEMEventType.PreviewInputChanged)
+                // Handle both preview and program changes since we support both tally options
+                if (e.EventType == ATEMEventType.PreviewInputChanged || e.EventType == ATEMEventType.ProgramInputChanged)
                 {
-                    long newPreviewInput = (long)e.NewValue;
                     Logger.Instance.LogMessage(TracingLevel.INFO,
-                        $"Preview input changed to {newPreviewInput} for ME {settings.MixEffectBlock}");
+                        $"{e.EventType} changed to {e.NewValue} for ME {settings.MixEffectBlock}");
                     
                     // Update button state based on the new cached state
                     UpdateButtonStateFromCache();
@@ -131,18 +180,26 @@ namespace ATEM_StreamDeck
         {
             try
             {
-                if (!settings.ShowTally)
+                if (!settings.TallyForPreview && !settings.TallyForProgram)
                 {
-                    // If tally is disabled, show default image
+                    // If both tally options are disabled, show default image
                     Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
                     Logger.Instance.LogMessage(TracingLevel.INFO, $"Button image set to DEFAULT (tally disabled for input {settings.InputId})");
                     return;
                 }
 
                 // Get current state from cache
-                bool isOnPreview = GetCurrentPreviewState();
+                bool isOnPreview = settings.TallyForPreview ? GetCurrentPreviewState() : false;
+                bool isOnProgram = settings.TallyForProgram ? GetCurrentProgramState() : false;
 
-                if (isOnPreview)
+                // Priority: Program (RED) > Preview (GREEN) > Default
+                if (isOnProgram && settings.TallyForProgram)
+                {
+                    // Set button to red image when on program (highest priority)
+                    Connection.SetImageAsync(ATEMConstants.RED_BUTTON_IMAGE);
+                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Button image set to RED (input {settings.InputId} on program)");
+                }
+                else if (isOnPreview && settings.TallyForPreview)
                 {
                     // Set button to green image when on preview
                     Connection.SetImageAsync(ATEMConstants.GREEN_BUTTON_IMAGE);
@@ -150,9 +207,9 @@ namespace ATEM_StreamDeck
                 }
                 else
                 {
-                    // Set button to default image when not on preview
+                    // Set button to default image when not matching any enabled tally condition
                     Connection.SetImageAsync(ATEMConstants.DEFAULT_IMAGE);
-                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Button image set to DEFAULT (input {settings.InputId} not on preview)");
+                    Logger.Instance.LogMessage(TracingLevel.INFO, $"Button image set to DEFAULT (input {settings.InputId} not matching tally conditions)");
                 }
             }
             catch (Exception ex)
@@ -189,10 +246,74 @@ namespace ATEM_StreamDeck
             }
         }
 
+        private bool GetCurrentProgramState()
+        {
+            try
+            {
+                if (connection == null || !connection.IsConnected)
+                {
+                    Logger.Instance.LogMessage(TracingLevel.DEBUG, $"Connection not available for input {settings.InputId}, returning false");
+                    return false;
+                }
+
+                var switcherState = ATEMConnectionManager.Instance.GetSwitcherState(settings.ATEMIPAddress);
+                var meState = switcherState.GetMixEffectState(settings.MixEffectBlock);
+
+                bool isOnProgram = (meState.ProgramInput == settings.InputId);
+                Logger.Instance.LogMessage(TracingLevel.DEBUG, 
+                    $"Input {settings.InputId} program state: {isOnProgram} (current program: {meState.ProgramInput})");
+                
+                return isOnProgram;
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error getting current program state: {ex}");
+                return false;
+            }
+        }
+
+        private void SendATEMInfoToPropertyInspector()
+        {
+            try
+            {
+                var switcherInfo = ATEMConnectionManager.Instance.GetSwitcherInfo(settings.ATEMIPAddress);
+                if (switcherInfo.LastUpdated == DateTime.MinValue)
+                {
+                    Logger.Instance.LogMessage(TracingLevel.DEBUG, "ATEM info not yet cached, skipping PI update");
+                    return;
+                }
+
+                var atemInfoPayload = new
+                {
+                    action = "atemInfoResponse",
+                    ipAddress = settings.ATEMIPAddress,
+                    mixEffectCount = switcherInfo.MixEffectCount,
+                    inputCount = switcherInfo.InputCount,
+                    inputs = switcherInfo.Inputs.Select(input => new
+                    {
+                        inputId = input.InputId,
+                        shortName = input.ShortName,
+                        longName = input.LongName,
+                        displayName = input.GetDisplayName()
+                    }).ToArray()
+                };
+
+                Connection.SendToPropertyInspectorAsync(JObject.FromObject(atemInfoPayload));
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"Sent ATEM info to Property Inspector: {switcherInfo.MixEffectCount} ME blocks, {switcherInfo.InputCount} inputs");
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error sending ATEM info to Property Inspector: {ex}");
+            }
+        }
+
         public override void Dispose()
         {
             try
             {
+                // Unsubscribe from events
+                Connection.OnSendToPlugin -= Connection_OnSendToPlugin;
+
                 // Unsubscribe from global state changes
                 ATEMConnectionManager.Instance.StateChanged -= OnATEMStateChanged;
 
@@ -253,7 +374,8 @@ namespace ATEM_StreamDeck
                 string oldIP = settings.ATEMIPAddress;
                 int oldMixEffectBlock = settings.MixEffectBlock;
                 long oldInputId = settings.InputId;
-                bool oldShowTally = settings.ShowTally;
+                bool oldTallyForPreview = settings.TallyForPreview;
+                bool oldTallyForProgram = settings.TallyForProgram;
 
                 Tools.AutoPopulateSettings(settings, payload.Settings);
 
@@ -269,7 +391,8 @@ namespace ATEM_StreamDeck
                 // If any settings that affect state changed, update button state
                 else if (oldMixEffectBlock != settings.MixEffectBlock || 
                          oldInputId != settings.InputId || 
-                         oldShowTally != settings.ShowTally)
+                         oldTallyForPreview != settings.TallyForPreview ||
+                         oldTallyForProgram != settings.TallyForProgram)
                 {
                     UpdateButtonStateFromCache();
                 }

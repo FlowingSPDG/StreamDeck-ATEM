@@ -30,17 +30,24 @@
             <input class="sdpi-item-value sdProperty" type="number" min="1" max="20" placeholder="1" value="" id="inputId" oninput="setSettings()">
         </div>
         <div class="sdpi-item">
-            <div class="sdpi-item-label">Show Tally:</div>
+            <div class="sdpi-item-label">Tally Options:</div>
             <div class="sdpi-item-value">
-                <input class="sdProperty" type="checkbox" id="showTally" onchange="setSettings()">
-                <label for="showTally" class="sdpi-item-label"><span></span>Show RED when on Program</label>
+                <input class="sdProperty sdCheckbox" type="checkbox" id="tallyForPreview" onchange="setSettings()">
+                <label for="tallyForPreview" class="sdpi-item-label"><span></span>Tally for Preview (GREEN)</label>
+            </div>
+        </div>
+        <div class="sdpi-item">
+            <div class="sdpi-item-label empty"></div>
+            <div class="sdpi-item-value">
+                <input class="sdProperty sdCheckbox" type="checkbox" id="tallyForProgram" onchange="setSettings()">
+                <label for="tallyForProgram" class="sdpi-item-label"><span></span>Tally for Program (RED)</label>
             </div>
         </div>
         <div class="sdpi-item">
             <div class="sdpi-item-label empty"></div>
             <div class="sdpi-item-value">
                 <p>Configure your ATEM Program button. This action will set the specified input as the Program source on the selected Mix Effect block.</p>
-                <p><strong>Tally Support:</strong> When enabled, the button will show RED when this input is on Program.</p>
+                <p><strong>Tally Support:</strong> Enable tally options to show GREEN when this input is on Preview and/or RED when on Program.</p>
                 <p><strong>Dynamic Configuration:</strong> Input options will update automatically based on your ATEM switcher capabilities when connected.</p>
             </div>
         </div>
