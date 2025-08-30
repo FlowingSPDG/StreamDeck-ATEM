@@ -26,27 +26,22 @@
             </select>
         </div>
         <div class="sdpi-item">
-            <div class="sdpi-item-label">Input ID:</div>
+            <div class="sdpi-item-label">Input:</div>
             <input class="sdpi-item-value sdProperty" type="number" min="1" max="20" placeholder="1" value="" id="inputId" oninput="setSettings()">
         </div>
         <div class="sdpi-item">
             <div class="sdpi-item-label">Show Tally:</div>
-            <input class="sdpi-item-value sdProperty" type="checkbox" id="showTally" onchange="setSettings()">
+            <div class="sdpi-item-value">
+                <input class="sdProperty" type="checkbox" id="showTally" onchange="setSettings()">
+                <label for="showTally" class="sdpi-item-label"><span></span>Show GREEN when on Preview</label>
+            </div>
         </div>
         <div class="sdpi-item">
             <div class="sdpi-item-label empty"></div>
             <div class="sdpi-item-value">
                 <p>Configure your ATEM Preview button. This action will set the specified input as the Preview source on the selected Mix Effect block.</p>
                 <p><strong>Tally Support:</strong> When enabled, the button will show GREEN when this input is on Preview.</p>
-                <p><strong>Common Input IDs:</strong></p>
-                <ul>
-                    <li>1-8: Camera inputs</li>
-                    <li>1000: Color Bars</li>
-                    <li>2001: Color 1</li>
-                    <li>2002: Color 2</li>
-                    <li>3010: Media Player 1</li>
-                    <li>3020: Media Player 2</li>
-                </ul>
+                <p><strong>Dynamic Configuration:</strong> Input options will update automatically based on your ATEM switcher capabilities when connected.</p>
             </div>
         </div>
     </div>

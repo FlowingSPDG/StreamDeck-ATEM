@@ -1,5 +1,6 @@
 using BarRaider.SdTools;
 using BarRaider.SdTools.Payloads;
+using BarRaider.SdTools.Wrappers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -52,7 +53,10 @@ namespace ATEM_StreamDeck
                 {
                     this.settings = payload.Settings.ToObject<PluginSettings>();
                 }
-                
+
+                // Set up event handlers
+                Connection.OnSendToPlugin += Connection_OnSendToPlugin;
+
                 InitializeATEMConnection();
                 
                 Logger.Instance.LogMessage(TracingLevel.INFO, "AutoTransitionAction constructor completed");
@@ -61,6 +65,37 @@ namespace ATEM_StreamDeck
             {
                 Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in AutoTransitionAction constructor: {ex}");
                 this.settings = PluginSettings.CreateDefaultSettings();
+            }
+        }
+
+        private void Connection_OnSendToPlugin(object sender, SDEventReceivedEventArgs<BarRaider.SdTools.Events.SendToPlugin> e)
+        {
+            try
+            {
+                var payload = e.Event.Payload;
+                if (payload != null && payload["action"]?.ToString() == "getATEMInfo")
+                {
+                    string requestedIP = payload["ipAddress"]?.ToString();
+                    if (!string.IsNullOrEmpty(requestedIP))
+                    {
+                        Logger.Instance.LogMessage(TracingLevel.INFO, $"Received ATEM info request for IP: {requestedIP}");
+                        
+                        // Update IP if different
+                        if (requestedIP != settings.ATEMIPAddress)
+                        {
+                            settings.ATEMIPAddress = requestedIP;
+                            InitializeATEMConnection();
+                            SaveSettings();
+                        }
+
+                        // Send current ATEM info
+                        SendATEMInfoToPropertyInspector();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error in SendToPlugin event handler: {ex}");
             }
         }
 
@@ -84,6 +119,8 @@ namespace ATEM_StreamDeck
             if (isConnected)
             {
                 Logger.Instance.LogMessage(TracingLevel.INFO, $"ATEM connection established for {settings.ATEMIPAddress}");
+                // Send ATEM info to Property Inspector when connected
+                SendATEMInfoToPropertyInspector();
                 // Update button state when connection is established
                 UpdateButtonStateFromCache();
             }
@@ -173,10 +210,41 @@ namespace ATEM_StreamDeck
             }
         }
 
+        private void SendATEMInfoToPropertyInspector()
+        {
+            try
+            {
+                var switcherInfo = ATEMConnectionManager.Instance.GetSwitcherInfo(settings.ATEMIPAddress);
+                if (switcherInfo.LastUpdated == DateTime.MinValue)
+                {
+                    Logger.Instance.LogMessage(TracingLevel.DEBUG, "ATEM info not yet cached, skipping PI update");
+                    return;
+                }
+
+                var atemInfoPayload = new
+                {
+                    action = "atemInfoResponse",
+                    ipAddress = settings.ATEMIPAddress,
+                    mixEffectCount = switcherInfo.MixEffectCount,
+                    inputCount = switcherInfo.InputCount
+                };
+
+                Connection.SendToPropertyInspectorAsync(JObject.FromObject(atemInfoPayload));
+                Logger.Instance.LogMessage(TracingLevel.INFO, $"Sent ATEM info to Property Inspector: {switcherInfo.MixEffectCount} ME blocks");
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.LogMessage(TracingLevel.ERROR, $"Error sending ATEM info to Property Inspector: {ex}");
+            }
+        }
+
         public override void Dispose()
         {
             try
             {
+                // Unsubscribe from events
+                Connection.OnSendToPlugin -= Connection_OnSendToPlugin;
+
                 // Unsubscribe from global state changes
                 ATEMConnectionManager.Instance.StateChanged -= OnATEMStateChanged;
                 
