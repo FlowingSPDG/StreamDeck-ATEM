@@ -1,11 +1,11 @@
 {
   "Actions": [
     {
-      "Icon": "Images/cut_icon",
+      "Icon": "Images/pluginAction",
       "Name": "ATEM Cut",
       "States": [
         {
-          "Image": "Images/cut_action",
+          "Image": "Images/pluginAction",
           "TitleAlignment": "middle",
           "FontSize": "12"
         }
@@ -16,11 +16,11 @@
       "PropertyInspectorPath": "PropertyInspector/CutActionPI.html"
     },
     {
-      "Icon": "Images/transition_icon",
+      "Icon": "Images/pluginAction",
       "Name": "ATEM Auto Transition",
       "States": [
         {
-          "Image": "Images/transition_action",
+          "Image": "Images/pluginAction",
           "TitleAlignment": "middle",
           "FontSize": "12"
         }
@@ -31,11 +31,11 @@
       "PropertyInspectorPath": "PropertyInspector/AutoTransitionPI.html"
     },
     {
-      "Icon": "Images/settings_icon",
+      "Icon": "Images/pluginAction",
       "Name": "ATEM Set Next Transition",
       "States": [
         {
-          "Image": "Images/settings_action",
+          "Image": "Images/pluginAction",
           "TitleAlignment": "middle",
           "FontSize": "12"
         }
@@ -46,11 +46,11 @@
       "PropertyInspectorPath": "PropertyInspector/SetNextTransitionPI.html"
     },
     {
-      "Icon": "Images/preview_icon",
+      "Icon": "Images/pluginAction",
       "Name": "ATEM Preview",
       "States": [
         {
-          "Image": "Images/preview_action",
+          "Image": "Images/pluginAction",
           "TitleAlignment": "middle",
           "FontSize": "12"
         }
@@ -61,11 +61,11 @@
       "PropertyInspectorPath": "PropertyInspector/PreviewActionPI.html"
     },
     {
-      "Icon": "Images/program_icon",
+      "Icon": "Images/pluginAction",
       "Name": "ATEM Program",
       "States": [
         {
-          "Image": "Images/program_action",
+          "Image": "Images/pluginAction",
           "TitleAlignment": "middle",
           "FontSize": "12"
         }
